@@ -21,7 +21,7 @@
 #include "esp_err.h"
 #include "esp_vfs_fat.h"
 #include "nvs_flash.h"
-#include "protocol_examples_common.h"
+
 #include "sdkconfig.h"
 #include "driver/sdspi_host.h"
 #include "driver/spi_common.h"
@@ -113,6 +113,6 @@ void app_main(void)
     ESP_ERROR_CHECK(nvs_flash_init());
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
-    ESP_ERROR_CHECK(example_connect());
+
     ESP_ERROR_CHECK(start_file_server("/sdcard"));
 }

@@ -13,6 +13,7 @@
 #include <sys/unistd.h>
 #include <sys/stat.h>
 #include <dirent.h>
+#include <audio_event_iface.h>
 
 #include "esp_err.h"
 #include "esp_log.h"
@@ -20,7 +21,24 @@
 #include "esp_vfs.h"
 #include "esp_spiffs.h"
 #include "esp_http_server.h"
+#include <string.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
+#include "esp_log.h"
+#include "audio_element.h"
+#include "audio_pipeline.h"
+#include "audio_event_iface.h"
+#include "audio_mem.h"
+#include "audio_common.h"
+#include "i2s_stream.h"
+#include "mp3_decoder.h"
+#include "esp_peripherals.h"
+#include "periph_touch.h"
+#include "periph_adc_button.h"
+#include "periph_button.h"
+#include "board.h"
+FILE *playFile=NULL;
 /* Max length a file path can have on storage */
 #define FILE_PATH_MAX (ESP_VFS_PATH_MAX + CONFIG_SPIFFS_OBJ_NAME_LEN)
 
@@ -320,17 +338,7 @@ static esp_err_t upload_post_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
-//    /* File cannot be larger than a limit */
-//    if (req->content_len > MAX_FILE_SIZE) {
-//        ESP_LOGE(TAG, "File too large : %d bytes", req->content_len);
-//        /* Respond with 400 Bad Request */
-//        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
-//                            "File size must be less than "
-//                            MAX_FILE_SIZE_STR "!");
-//        /* Return failure to close underlying connection else the
-//         * incoming file content will keep the socket busy */
-//        return ESP_FAIL;
-//    }
+
 
     fd = fopen(filepath, "w");
     if (!fd) {
@@ -475,6 +483,8 @@ static esp_err_t play_post_handler(httpd_req_t *req)
 
     ESP_LOGI(TAG, "Play file : %s", filename);
 
+    playFile= fopen(filepath,"rb");
+
 
     /* Redirect onto root to see the updated file list */
     httpd_resp_set_status(req, "303 See Other");
@@ -484,9 +494,105 @@ static esp_err_t play_post_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+
+
+
+
+
+
+
+
+
+int mp3_music_read_cb(audio_element_handle_t el, char *buf, int len, TickType_t wait_time, void *ctx)
+{
+    while(playFile==NULL){
+        vTaskDelay(10);
+    }
+    int len2=fread(buf,len,1,playFile);
+    if(len2==0){
+        fclose(playFile);
+        playFile=NULL;
+    }
+
+    return len2;
+}
+
+
 /* Function to start the file server */
 esp_err_t start_file_server(const char *base_path)
 {
+
+
+
+    audio_pipeline_handle_t pipeline;
+    audio_element_handle_t i2s_stream_writer, mp3_decoder;
+
+    esp_log_level_set("*", ESP_LOG_WARN);
+    esp_log_level_set(TAG, ESP_LOG_INFO);
+
+    ESP_LOGI(TAG, "[ 1 ] Start audio codec chip");
+    audio_board_handle_t board_handle = audio_board_init();
+    audio_hal_ctrl_codec(board_handle->audio_hal, AUDIO_HAL_CODEC_MODE_BOTH, AUDIO_HAL_CTRL_START);
+
+    int player_volume;
+    audio_hal_get_volume(board_handle->audio_hal, &player_volume);
+
+    ESP_LOGI(TAG, "[ 2 ] Create audio pipeline, add all elements to pipeline, and subscribe pipeline event");
+    audio_pipeline_cfg_t pipeline_cfg = DEFAULT_AUDIO_PIPELINE_CONFIG();
+    pipeline = audio_pipeline_init(&pipeline_cfg);
+    mem_assert(pipeline);
+
+    ESP_LOGI(TAG, "[2.1] Create mp3 decoder to decode mp3 file and set custom read callback");
+    mp3_decoder_cfg_t mp3_cfg = DEFAULT_MP3_DECODER_CONFIG();
+    mp3_decoder = mp3_decoder_init(&mp3_cfg);
+    audio_element_set_read_cb(mp3_decoder, mp3_music_read_cb, NULL);
+
+    ESP_LOGI(TAG, "[2.2] Create i2s stream to write data to codec chip");
+    i2s_stream_cfg_t i2s_cfg = I2S_STREAM_CFG_DEFAULT();
+    i2s_cfg.type = AUDIO_STREAM_WRITER;
+    i2s_stream_writer = i2s_stream_init(&i2s_cfg);
+
+    ESP_LOGI(TAG, "[2.3] Register all elements to audio pipeline");
+    audio_pipeline_register(pipeline, mp3_decoder, "mp3");
+    audio_pipeline_register(pipeline, i2s_stream_writer, "i2s");
+
+    ESP_LOGI(TAG, "[2.4] Link it together [mp3_music_read_cb]-->mp3_decoder-->i2s_stream-->[codec_chip]");
+    const char *link_tag[2] = {"mp3", "i2s"};
+    audio_pipeline_link(pipeline, &link_tag[0], 2);
+
+    ESP_LOGI(TAG, "[ 3 ] Initialize peripherals");
+    esp_periph_config_t periph_cfg = DEFAULT_ESP_PERIPH_SET_CONFIG();
+    esp_periph_set_handle_t set = esp_periph_set_init(&periph_cfg);
+
+    ESP_LOGI(TAG, "[3.1] Initialize keys on board");
+    audio_board_key_init(set);
+
+    ESP_LOGI(TAG, "[ 4 ] Set up  event listener");
+    audio_event_iface_cfg_t evt_cfg = AUDIO_EVENT_IFACE_DEFAULT_CFG();
+    audio_event_iface_handle_t evt = audio_event_iface_init(&evt_cfg);
+
+    ESP_LOGI(TAG, "[4.1] Listening event from all elements of pipeline");
+    audio_pipeline_set_listener(pipeline, evt);
+
+    ESP_LOGI(TAG, "[4.2] Listening event from peripherals");
+    audio_event_iface_set_listener(esp_periph_set_get_event_iface(set), evt);
+
+
+
+    audio_pipeline_run(pipeline);
+
+
+
+
+
+
+
+
+
+
+
+
+
     static struct file_server_data *server_data = NULL;
 
 
