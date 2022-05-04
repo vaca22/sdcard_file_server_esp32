@@ -632,22 +632,12 @@ esp_err_t start_file_server(const char *base_path)
 //
     i2s_stream_cfg_t i2s_cfg = I2S_STREAM_CFG_DEFAULT();
     i2s_cfg.type = AUDIO_STREAM_WRITER;
+    i2s_cfg.i2s_config.use_apll=false;
     i2s_cfg.use_alc=false;
-    WRITE_PERI_REG(I2S_CLKM_CONF_REG(0),  // Set I2S0 clock
-                   I2S_CLK_EN | // Use PLL_D2_CLK which is 160MHz
-                   (0 << I2S_CLKM_DIV_A_S) |
-                   (0 << I2S_CLKM_DIV_B_S) |
-                   (4 << I2S_CLKM_DIV_NUM_S));
+
     i2s_stream_writer = i2s_stream_init(&i2s_cfg);
 
 
-
-    // Set I2S0_CLk to 40 MHz
-    WRITE_PERI_REG(I2S_CLKM_CONF_REG(0),  // Set I2S0 clock
-                   I2S_CLK_EN | // Use PLL_D2_CLK which is 160MHz
-                   (0 << I2S_CLKM_DIV_A_S) |
-                   (0 << I2S_CLKM_DIV_B_S) |
-                   (4 << I2S_CLKM_DIV_NUM_S));
 
     audio_pipeline_register(pipeline, mp3_decoder, "mp3");
     audio_pipeline_register(pipeline, i2s_stream_writer, "i2s");
