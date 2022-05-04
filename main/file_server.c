@@ -508,7 +508,11 @@ static esp_err_t play_post_handler(httpd_req_t *req)
 int mp3_music_read_cb(audio_element_handle_t el, char *buf, int len, TickType_t wait_time, void *ctx)
 {
 
-  fread(buf,len,1,playFile);
+  int a=fread(buf,len,1,playFile);
+  if(a==0){
+      close(playFile);
+      playFile=NULL;
+  }
     return len;
 }
 
