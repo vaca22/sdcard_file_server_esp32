@@ -516,7 +516,24 @@ int mp3_music_read_cb(audio_element_handle_t el, char *buf, int len, TickType_t 
   }
     return len;
 }
-
+//i2s number
+#define EXAMPLE_I2S_NUM           (0)
+//i2s sample rate
+#define EXAMPLE_I2S_SAMPLE_RATE   (16000)
+//i2s data bits
+#define EXAMPLE_I2S_SAMPLE_BITS   (16)
+//enable display buffer for debug
+#define EXAMPLE_I2S_BUF_DEBUG     (0)
+//I2S read buffer length
+#define EXAMPLE_I2S_READ_LEN      (16 * 1024)
+//I2S data format
+#define EXAMPLE_I2S_FORMAT        (I2S_CHANNEL_FMT_RIGHT_LEFT)
+//I2S channel number
+#define EXAMPLE_I2S_CHANNEL_NUM   ((EXAMPLE_I2S_FORMAT < I2S_CHANNEL_FMT_ONLY_RIGHT) ? (2) : (1))
+//I2S built-in ADC unit
+#define I2S_ADC_UNIT              ADC_UNIT_1
+//I2S built-in ADC channel
+#define I2S_ADC_CHANNEL           ADC1_CHANNEL_0
 
 /* Function to start the file server */
 esp_err_t start_file_server(const char *base_path)
@@ -524,70 +541,83 @@ esp_err_t start_file_server(const char *base_path)
 
 
 
-    audio_element_handle_t i2s_stream_writer, mp3_decoder;
+//    audio_element_handle_t i2s_stream_writer, mp3_decoder;
+////
+//    esp_log_level_set("*", ESP_LOG_WARN);
+//    esp_log_level_set(TAG, ESP_LOG_INFO);
 //
-    esp_log_level_set("*", ESP_LOG_WARN);
-    esp_log_level_set(TAG, ESP_LOG_INFO);
-
-    audio_board_handle_t board_handle = audio_board_init();
-    audio_hal_ctrl_codec(board_handle->audio_hal, AUDIO_HAL_CODEC_MODE_BOTH, AUDIO_HAL_CTRL_START);
-
+//    audio_board_handle_t board_handle = audio_board_init();
+//    audio_hal_ctrl_codec(board_handle->audio_hal, AUDIO_HAL_CODEC_MODE_BOTH, AUDIO_HAL_CTRL_START);
 //
-    audio_pipeline_cfg_t pipeline_cfg = DEFAULT_AUDIO_PIPELINE_CONFIG();
-    pipeline = audio_pipeline_init(&pipeline_cfg);
+////
+//    audio_pipeline_cfg_t pipeline_cfg = DEFAULT_AUDIO_PIPELINE_CONFIG();
+//    pipeline = audio_pipeline_init(&pipeline_cfg);
+////
+////    ESP_LOGI(TAG, "[2.1] Create mp3 decoder to decode mp3 file and set custom read callback");
+//    mp3_decoder_cfg_t mp3_cfg = DEFAULT_MP3_DECODER_CONFIG();
+//    mp3_decoder = mp3_decoder_init(&mp3_cfg);
+//    audio_element_set_read_cb(mp3_decoder, mp3_music_read_cb, NULL);
+////
+//    i2s_stream_cfg_t i2s_cfg = I2S_STREAM_CFG_DEFAULT();
+//    i2s_cfg.type = AUDIO_STREAM_WRITER;
+//    i2s_cfg.use_alc=false;
+//    i2s_stream_writer = i2s_stream_init(&i2s_cfg);
+//    // Enable the I2S peripheral
+//    periph_module_enable(PERIPH_I2S0_MODULE);
 //
-//    ESP_LOGI(TAG, "[2.1] Create mp3 decoder to decode mp3 file and set custom read callback");
-    mp3_decoder_cfg_t mp3_cfg = DEFAULT_MP3_DECODER_CONFIG();
-    mp3_decoder = mp3_decoder_init(&mp3_cfg);
-    audio_element_set_read_cb(mp3_decoder, mp3_music_read_cb, NULL);
+//    // Configure Audio PLL to 50 MHz.
+//    rtc_clk_apll_enable(true, 0 /*sdm0*/, 0 /*sdm1*/, 6 /*sdm2*/, 2 /*odiv*/); // 50 MHz
 //
-    i2s_stream_cfg_t i2s_cfg = I2S_STREAM_CFG_DEFAULT();
-    i2s_cfg.type = AUDIO_STREAM_WRITER;
-    i2s_cfg.use_alc=false;
-    i2s_stream_writer = i2s_stream_init(&i2s_cfg);
-    // Enable the I2S peripheral
-    periph_module_enable(PERIPH_I2S0_MODULE);
-
-    // Configure Audio PLL to 50 MHz.
-    rtc_clk_apll_enable(true, 0 /*sdm0*/, 0 /*sdm1*/, 6 /*sdm2*/, 2 /*odiv*/); // 50 MHz
-
-    // Set I2S0_CLk to 40 MHz
-    WRITE_PERI_REG(I2S_CLKM_CONF_REG(0),  // Set I2S0 clock
-                   I2S_CLK_EN | // Use PLL_D2_CLK which is 160MHz
-                   (0 << I2S_CLKM_DIV_A_S) |
-                   (0 << I2S_CLKM_DIV_B_S) |
-                   (4 << I2S_CLKM_DIV_NUM_S)); // Divide by 4 to generate 40 MHz from PLL_D2_CLK
-
-    // This is undocumented but outputs 50MHz on GPIO0_CLK_OUT1 and I2S0_CLK on CLK_OUT2
-    WRITE_PERI_REG(PIN_CTRL,  (0x0 << CLK_OUT2_S) | (0xF << CLK_OUT3_S));
-
-    // Output CLK_OUT1 on GPIO3 (U0RXD),
-    // hardware needs a 1k serial resistor here to avoid USB UART driving...
-    PIN_FUNC_SELECT(GPIO_PIN_REG_3, FUNC_U0RXD_CLK_OUT2);
+//    // Set I2S0_CLk to 40 MHz
+//    WRITE_PERI_REG(I2S_CLKM_CONF_REG(0),  // Set I2S0 clock
+//                   I2S_CLK_EN | // Use PLL_D2_CLK which is 160MHz
+//                   (0 << I2S_CLKM_DIV_A_S) |
+//                   (0 << I2S_CLKM_DIV_B_S) |
+//                   (4 << I2S_CLKM_DIV_NUM_S)); // Divide by 4 to generate 40 MHz from PLL_D2_CLK
 //
-//    audio_pipeline_register(pipeline, mp3_decoder, "mp3");
-//    audio_pipeline_register(pipeline, i2s_stream_writer, "i2s");
+//    // This is undocumented but outputs 50MHz on GPIO0_CLK_OUT1 and I2S0_CLK on CLK_OUT2
+//    WRITE_PERI_REG(PIN_CTRL,  (0x0 << CLK_OUT2_S) | (0xF << CLK_OUT3_S));
 //
-//    const char *link_tag[2] = {"mp3", "i2s"};
-//    audio_pipeline_link(pipeline, &link_tag[0], 2);
+//    // Output CLK_OUT1 on GPIO3 (U0RXD),
+//    // hardware needs a 1k serial resistor here to avoid USB UART driving...
+//    PIN_FUNC_SELECT(GPIO_PIN_REG_3, FUNC_U0RXD_CLK_OUT2);
+////
+////    audio_pipeline_register(pipeline, mp3_decoder, "mp3");
+////    audio_pipeline_register(pipeline, i2s_stream_writer, "i2s");
+////
+////    const char *link_tag[2] = {"mp3", "i2s"};
+////    audio_pipeline_link(pipeline, &link_tag[0], 2);
+////
+////    audio_event_iface_cfg_t evt_cfg = AUDIO_EVENT_IFACE_DEFAULT_CFG();
+////    audio_event_iface_handle_t evt = audio_event_iface_init(&evt_cfg);
+////
+////    ESP_LOGI(TAG, "[4.1] Listening event from all elements of pipeline");
+////    audio_pipeline_set_listener(pipeline, evt);
 //
-//    audio_event_iface_cfg_t evt_cfg = AUDIO_EVENT_IFACE_DEFAULT_CFG();
-//    audio_event_iface_handle_t evt = audio_event_iface_init(&evt_cfg);
 //
-//    ESP_LOGI(TAG, "[4.1] Listening event from all elements of pipeline");
-//    audio_pipeline_set_listener(pipeline, evt);
+//
 
 
 
 
 
 
-
-
-
-
-
-
+    int i2s_num = EXAMPLE_I2S_NUM;
+    i2s_config_t i2s_config = {
+            .mode = I2S_MODE_MASTER | I2S_MODE_RX | I2S_MODE_TX | I2S_MODE_DAC_BUILT_IN | I2S_MODE_ADC_BUILT_IN,
+            .sample_rate =  EXAMPLE_I2S_SAMPLE_RATE,
+            .bits_per_sample = EXAMPLE_I2S_SAMPLE_BITS,
+            .communication_format = I2S_COMM_FORMAT_STAND_MSB,
+            .channel_format = EXAMPLE_I2S_FORMAT,
+            .intr_alloc_flags = 0,
+            .dma_buf_count = 2,
+            .dma_buf_len = 1024,
+            .use_apll = 1,
+    };
+    //install and start i2s driver
+    i2s_driver_install(i2s_num, &i2s_config, 0, NULL);
+    //init DAC pad
+    i2s_set_dac_mode(I2S_DAC_CHANNEL_BOTH_EN);
 
 
 
