@@ -39,6 +39,34 @@
 #include "periph_adc_button.h"
 #include "periph_button.h"
 #include "board.h"
+#include <sys/unistd.h>
+#include <sys/stat.h>
+#include <sys/param.h>
+
+
+#include "esp_wifi.h"
+#include "esp_event.h"
+#include "esp_log.h"
+#include "esp_system.h"
+#include "esp_spiffs.h"
+#include "esp_netif.h"
+#include "esp_err.h"
+#include "esp_vfs_fat.h"
+#include "nvs_flash.h"
+
+#include "sdkconfig.h"
+#include "driver/sdspi_host.h"
+#include "driver/spi_common.h"
+#include "sdmmc_cmd.h"
+#include "soc/soc_caps.h"
+
+
+#include "driver/sdmmc_host.h"
+
+#include <freertos/event_groups.h>
+#include <soc/i2s_reg.h>
+#include <soc/rtc.h>
+#include <driver/periph_ctrl.h>
 FILE *playFile=NULL;
 /* Max length a file path can have on storage */
 #define FILE_PATH_MAX (ESP_VFS_PATH_MAX + CONFIG_SPIFFS_OBJ_NAME_LEN)
@@ -535,89 +563,137 @@ int mp3_music_read_cb(audio_element_handle_t el, char *buf, int len, TickType_t 
 //I2S built-in ADC channel
 #define I2S_ADC_CHANNEL           ADC1_CHANNEL_0
 
+static void eth_event_handler(void *arg, esp_event_base_t event_base,
+                              int32_t event_id, void *event_data)
+{
+    uint8_t mac_addr[6] = {0};
+    /* we can get the ethernet driver handle from event data */
+    esp_eth_handle_t eth_handle = *(esp_eth_handle_t *)event_data;
+
+    switch (event_id) {
+        case ETHERNET_EVENT_CONNECTED:
+            esp_eth_ioctl(eth_handle, ETH_CMD_G_MAC_ADDR, mac_addr);
+            ESP_LOGI(TAG, "Ethernet Link Up");
+            ESP_LOGI(TAG, "Ethernet HW Addr %02x:%02x:%02x:%02x:%02x:%02x",
+                     mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
+            break;
+        case ETHERNET_EVENT_DISCONNECTED:
+            ESP_LOGI(TAG, "Ethernet Link Down");
+            break;
+        case ETHERNET_EVENT_START:
+            ESP_LOGI(TAG, "Ethernet Started");
+            break;
+        case ETHERNET_EVENT_STOP:
+            ESP_LOGI(TAG, "Ethernet Stopped");
+            break;
+        default:
+            break;
+    }
+}
+static int ga=1;
+/** Event handler for IP_EVENT_ETH_GOT_IP */
+static void got_ip_event_handler(void *arg, esp_event_base_t event_base,
+                                 int32_t event_id, void *event_data)
+{
+    ip_event_got_ip_t *event = (ip_event_got_ip_t *) event_data;
+    const esp_netif_ip_info_t *ip_info = &event->ip_info;
+
+    ESP_LOGI(TAG, "Ethernet Got IP Address");
+    ESP_LOGI(TAG, "~~~~~~~~~~~");
+    ESP_LOGI(TAG, "ETHIP:" IPSTR, IP2STR(&ip_info->ip));
+    ESP_LOGI(TAG, "ETHMASK:" IPSTR, IP2STR(&ip_info->netmask));
+    ESP_LOGI(TAG, "ETHGW:" IPSTR, IP2STR(&ip_info->gw));
+    ESP_LOGI(TAG, "~~~~~~~~~~~");
+
+
+}
 /* Function to start the file server */
 esp_err_t start_file_server(const char *base_path)
 {
 
 
 
-//    audio_element_handle_t i2s_stream_writer, mp3_decoder;
-////
-//    esp_log_level_set("*", ESP_LOG_WARN);
-//    esp_log_level_set(TAG, ESP_LOG_INFO);
+    audio_element_handle_t i2s_stream_writer, mp3_decoder;
 //
-//    audio_board_handle_t board_handle = audio_board_init();
-//    audio_hal_ctrl_codec(board_handle->audio_hal, AUDIO_HAL_CODEC_MODE_BOTH, AUDIO_HAL_CTRL_START);
+    esp_log_level_set("*", ESP_LOG_WARN);
+    esp_log_level_set(TAG, ESP_LOG_INFO);
+
+    audio_board_handle_t board_handle = audio_board_init();
+    audio_hal_ctrl_codec(board_handle->audio_hal, AUDIO_HAL_CODEC_MODE_BOTH, AUDIO_HAL_CTRL_START);
+
 //
-////
-//    audio_pipeline_cfg_t pipeline_cfg = DEFAULT_AUDIO_PIPELINE_CONFIG();
-//    pipeline = audio_pipeline_init(&pipeline_cfg);
-////
-////    ESP_LOGI(TAG, "[2.1] Create mp3 decoder to decode mp3 file and set custom read callback");
-//    mp3_decoder_cfg_t mp3_cfg = DEFAULT_MP3_DECODER_CONFIG();
-//    mp3_decoder = mp3_decoder_init(&mp3_cfg);
-//    audio_element_set_read_cb(mp3_decoder, mp3_music_read_cb, NULL);
-////
-//    i2s_stream_cfg_t i2s_cfg = I2S_STREAM_CFG_DEFAULT();
-//    i2s_cfg.type = AUDIO_STREAM_WRITER;
-//    i2s_cfg.use_alc=false;
-//    i2s_stream_writer = i2s_stream_init(&i2s_cfg);
-//    // Enable the I2S peripheral
-//    periph_module_enable(PERIPH_I2S0_MODULE);
+    audio_pipeline_cfg_t pipeline_cfg = DEFAULT_AUDIO_PIPELINE_CONFIG();
+    pipeline = audio_pipeline_init(&pipeline_cfg);
 //
-//    // Configure Audio PLL to 50 MHz.
-//    rtc_clk_apll_enable(true, 0 /*sdm0*/, 0 /*sdm1*/, 6 /*sdm2*/, 2 /*odiv*/); // 50 MHz
+//    ESP_LOGI(TAG, "[2.1] Create mp3 decoder to decode mp3 file and set custom read callback");
+    mp3_decoder_cfg_t mp3_cfg = DEFAULT_MP3_DECODER_CONFIG();
+    mp3_decoder = mp3_decoder_init(&mp3_cfg);
+    audio_element_set_read_cb(mp3_decoder, mp3_music_read_cb, NULL);
 //
-//    // Set I2S0_CLk to 40 MHz
-//    WRITE_PERI_REG(I2S_CLKM_CONF_REG(0),  // Set I2S0 clock
-//                   I2S_CLK_EN | // Use PLL_D2_CLK which is 160MHz
-//                   (0 << I2S_CLKM_DIV_A_S) |
-//                   (0 << I2S_CLKM_DIV_B_S) |
-//                   (4 << I2S_CLKM_DIV_NUM_S)); // Divide by 4 to generate 40 MHz from PLL_D2_CLK
-//
-//    // This is undocumented but outputs 50MHz on GPIO0_CLK_OUT1 and I2S0_CLK on CLK_OUT2
-//    WRITE_PERI_REG(PIN_CTRL,  (0x0 << CLK_OUT2_S) | (0xF << CLK_OUT3_S));
-//
-//    // Output CLK_OUT1 on GPIO3 (U0RXD),
-//    // hardware needs a 1k serial resistor here to avoid USB UART driving...
-//    PIN_FUNC_SELECT(GPIO_PIN_REG_3, FUNC_U0RXD_CLK_OUT2);
-////
-////    audio_pipeline_register(pipeline, mp3_decoder, "mp3");
-////    audio_pipeline_register(pipeline, i2s_stream_writer, "i2s");
-////
-////    const char *link_tag[2] = {"mp3", "i2s"};
-////    audio_pipeline_link(pipeline, &link_tag[0], 2);
-////
-////    audio_event_iface_cfg_t evt_cfg = AUDIO_EVENT_IFACE_DEFAULT_CFG();
-////    audio_event_iface_handle_t evt = audio_event_iface_init(&evt_cfg);
-////
-////    ESP_LOGI(TAG, "[4.1] Listening event from all elements of pipeline");
-////    audio_pipeline_set_listener(pipeline, evt);
-//
-//
-//
+    i2s_stream_cfg_t i2s_cfg = I2S_STREAM_CFG_DEFAULT();
+    i2s_cfg.type = AUDIO_STREAM_WRITER;
+    i2s_cfg.use_alc=false;
+    WRITE_PERI_REG(I2S_CLKM_CONF_REG(0),  // Set I2S0 clock
+                   I2S_CLK_EN | // Use PLL_D2_CLK which is 160MHz
+                   (0 << I2S_CLKM_DIV_A_S) |
+                   (0 << I2S_CLKM_DIV_B_S) |
+                   (4 << I2S_CLKM_DIV_NUM_S));
+    i2s_stream_writer = i2s_stream_init(&i2s_cfg);
+
+
+
+    // Set I2S0_CLk to 40 MHz
+    WRITE_PERI_REG(I2S_CLKM_CONF_REG(0),  // Set I2S0 clock
+                   I2S_CLK_EN | // Use PLL_D2_CLK which is 160MHz
+                   (0 << I2S_CLKM_DIV_A_S) |
+                   (0 << I2S_CLKM_DIV_B_S) |
+                   (4 << I2S_CLKM_DIV_NUM_S));
+
+    audio_pipeline_register(pipeline, mp3_decoder, "mp3");
+    audio_pipeline_register(pipeline, i2s_stream_writer, "i2s");
+
+    const char *link_tag[2] = {"mp3", "i2s"};
+    audio_pipeline_link(pipeline, &link_tag[0], 2);
+
+    audio_event_iface_cfg_t evt_cfg = AUDIO_EVENT_IFACE_DEFAULT_CFG();
+    audio_event_iface_handle_t evt = audio_event_iface_init(&evt_cfg);
+
+    ESP_LOGI(TAG, "[4.1] Listening event from all elements of pipeline");
+    audio_pipeline_set_listener(pipeline, evt);
 
 
 
 
 
+    ESP_ERROR_CHECK(esp_netif_init());
+    // Create default event loop that running in background
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
+    // Create new default instance of esp-netif for Ethernet
+    esp_netif_config_t cfg = ESP_NETIF_DEFAULT_ETH();
+    esp_netif_t *eth_netif = esp_netif_new(&cfg);
 
-    int i2s_num = EXAMPLE_I2S_NUM;
-    i2s_config_t i2s_config = {
-            .mode = I2S_MODE_MASTER | I2S_MODE_RX | I2S_MODE_TX | I2S_MODE_DAC_BUILT_IN | I2S_MODE_ADC_BUILT_IN,
-            .sample_rate =  EXAMPLE_I2S_SAMPLE_RATE,
-            .bits_per_sample = EXAMPLE_I2S_SAMPLE_BITS,
-            .communication_format = I2S_COMM_FORMAT_STAND_MSB,
-            .channel_format = EXAMPLE_I2S_FORMAT,
-            .intr_alloc_flags = 0,
-            .dma_buf_count = 2,
-            .dma_buf_len = 1024,
-            .use_apll = 1,
-    };
-    //install and start i2s driver
-    i2s_driver_install(i2s_num, &i2s_config, 0, NULL);
-    //init DAC pad
-    i2s_set_dac_mode(I2S_DAC_CHANNEL_BOTH_EN);
+    // Init MAC and PHY configs to default
+    eth_mac_config_t mac_config = ETH_MAC_DEFAULT_CONFIG();
+    eth_phy_config_t phy_config = ETH_PHY_DEFAULT_CONFIG();
+
+    phy_config.phy_addr = 1;
+    phy_config.reset_gpio_num = 16;
+    mac_config.smi_mdc_gpio_num = 23;
+    mac_config.smi_mdio_gpio_num = 18;
+    esp_eth_mac_t *mac = esp_eth_mac_new_esp32(&mac_config);
+
+    esp_eth_phy_t *phy = esp_eth_phy_new_lan87xx(&phy_config);
+
+    esp_eth_config_t config2 = ETH_DEFAULT_CONFIG(mac, phy);
+    esp_eth_handle_t eth_handle = NULL;
+    ESP_ERROR_CHECK(esp_eth_driver_install(&config2, &eth_handle));
+    /* attach Ethernet driver to TCP/IP stack */
+    ESP_ERROR_CHECK(esp_netif_attach(eth_netif, esp_eth_new_netif_glue(eth_handle)));
+    // Register user defined event handers
+    ESP_ERROR_CHECK(esp_event_handler_register(ETH_EVENT, ESP_EVENT_ANY_ID, &eth_event_handler, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_GOT_IP, &got_ip_event_handler, NULL));
+    ESP_ERROR_CHECK(esp_eth_start(eth_handle));
+
 
 
 
