@@ -34,6 +34,9 @@
 #include "driver/sdmmc_host.h"
 
 #include <freertos/event_groups.h>
+#include <soc/i2s_reg.h>
+#include <soc/rtc.h>
+#include <driver/periph_ctrl.h>
 
 /* This example demonstrates how to create file server
  * using esp_http_server. This file has only startup code.
@@ -44,7 +47,7 @@ static const char *TAG = "example";
 /* ESP32-S2/C3 doesn't have an SD Host peripheral, always use SPI,
  * ESP32 can choose SPI or SDMMC Host, SPI is used by default: */
 
-esp_netif_t *wifiSTA;
+
 
 static sdmmc_card_t *mount_card = NULL;
 static char *mount_base_path = MOUNT_POINT;
@@ -101,53 +104,112 @@ void sdcard_mount2(void) {
 }
 
 
-static EventGroupHandle_t wifi_event_group;
-const int WIFI_CONNECTED_BIT = BIT0;
-static esp_err_t wifi_event_handler(void *ctx, system_event_t *event) {
-    esp_netif_dns_info_t dns;
 
-    switch (event->event_id) {
-        case SYSTEM_EVENT_STA_START:
-            esp_wifi_connect();
-            break;
-        case SYSTEM_EVENT_STA_GOT_IP:
-            ESP_LOGI(TAG, "got ip:" IPSTR, IP2STR(&event->event_info.got_ip.ip_info.ip));
-            xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
-            break;
-        case SYSTEM_EVENT_STA_DISCONNECTED:
-            ESP_LOGI(TAG, "disconnected - retry to connect to the AP");
-            esp_wifi_connect();
-            xEventGroupClearBits(wifi_event_group, WIFI_CONNECTED_BIT);
-            break;
 
+static void eth_event_handler(void *arg, esp_event_base_t event_base,
+                              int32_t event_id, void *event_data)
+{
+    uint8_t mac_addr[6] = {0};
+    /* we can get the ethernet driver handle from event data */
+    esp_eth_handle_t eth_handle = *(esp_eth_handle_t *)event_data;
+
+    switch (event_id) {
+        case ETHERNET_EVENT_CONNECTED:
+            esp_eth_ioctl(eth_handle, ETH_CMD_G_MAC_ADDR, mac_addr);
+            ESP_LOGI(TAG, "Ethernet Link Up");
+            ESP_LOGI(TAG, "Ethernet HW Addr %02x:%02x:%02x:%02x:%02x:%02x",
+                     mac_addr[0], mac_addr[1], mac_addr[2], mac_addr[3], mac_addr[4], mac_addr[5]);
+            break;
+        case ETHERNET_EVENT_DISCONNECTED:
+            ESP_LOGI(TAG, "Ethernet Link Down");
+            break;
+        case ETHERNET_EVENT_START:
+            ESP_LOGI(TAG, "Ethernet Started");
+            break;
+        case ETHERNET_EVENT_STOP:
+            ESP_LOGI(TAG, "Ethernet Stopped");
+            break;
         default:
             break;
     }
-    return ESP_OK;
 }
-const int CONNECTED_BIT = BIT0;
-#define JOIN_TIMEOUT_MS (2000)
-void wifi_init(const char *ssid, const char *passwd) {
-    wifi_event_group = xEventGroupCreate();
-    esp_netif_init();
-    wifiSTA = esp_netif_create_default_wifi_sta();
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    ESP_ERROR_CHECK(esp_event_loop_init(wifi_event_handler, NULL));
-    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-    wifi_config_t wifi_config = {0};
-    strlcpy((char *) wifi_config.sta.ssid, ssid, sizeof(wifi_config.sta.ssid));
-    strlcpy((char *) wifi_config.sta.password, passwd, sizeof(wifi_config.sta.password));
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-    ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
-    ESP_ERROR_CHECK(esp_wifi_start());
-}
+static int ga=1;
+/** Event handler for IP_EVENT_ETH_GOT_IP */
+static void got_ip_event_handler(void *arg, esp_event_base_t event_base,
+                                 int32_t event_id, void *event_data)
+{
+    ip_event_got_ip_t *event = (ip_event_got_ip_t *) event_data;
+    const esp_netif_ip_info_t *ip_info = &event->ip_info;
 
+    ESP_LOGI(TAG, "Ethernet Got IP Address");
+    ESP_LOGI(TAG, "~~~~~~~~~~~");
+    ESP_LOGI(TAG, "ETHIP:" IPSTR, IP2STR(&ip_info->ip));
+    ESP_LOGI(TAG, "ETHMASK:" IPSTR, IP2STR(&ip_info->netmask));
+    ESP_LOGI(TAG, "ETHGW:" IPSTR, IP2STR(&ip_info->gw));
+    ESP_LOGI(TAG, "~~~~~~~~~~~");
+    if(ga==1){
+        ga=0;
+        ESP_ERROR_CHECK(start_file_server("/sdcard"));
+    }
+
+}
 
 void app_main(void) {
-    sdcard_mount2();
-    ESP_ERROR_CHECK(nvs_flash_init());
     ESP_ERROR_CHECK(esp_netif_init());
+    // Create default event loop that running in background
     ESP_ERROR_CHECK(esp_event_loop_create_default());
-    wifi_init("vaca","22345678");
-    ESP_ERROR_CHECK(start_file_server("/sdcard"));
+    // Create new default instance of esp-netif for Ethernet
+    esp_netif_config_t cfg = ESP_NETIF_DEFAULT_ETH();
+    esp_netif_t *eth_netif = esp_netif_new(&cfg);
+
+    // Init MAC and PHY configs to default
+    eth_mac_config_t mac_config = ETH_MAC_DEFAULT_CONFIG();
+    eth_phy_config_t phy_config = ETH_PHY_DEFAULT_CONFIG();
+
+    phy_config.phy_addr = 1;
+    phy_config.reset_gpio_num = 16;
+    mac_config.smi_mdc_gpio_num = 23;
+    mac_config.smi_mdio_gpio_num = 18;
+    esp_eth_mac_t *mac = esp_eth_mac_new_esp32(&mac_config);
+
+    esp_eth_phy_t *phy = esp_eth_phy_new_lan87xx(&phy_config);
+
+    esp_eth_config_t config = ETH_DEFAULT_CONFIG(mac, phy);
+    esp_eth_handle_t eth_handle = NULL;
+    ESP_ERROR_CHECK(esp_eth_driver_install(&config, &eth_handle));
+    /* attach Ethernet driver to TCP/IP stack */
+    ESP_ERROR_CHECK(esp_netif_attach(eth_netif, esp_eth_new_netif_glue(eth_handle)));
+    // Register user defined event handers
+    ESP_ERROR_CHECK(esp_event_handler_register(ETH_EVENT, ESP_EVENT_ANY_ID, &eth_event_handler, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_GOT_IP, &got_ip_event_handler, NULL));
+    ESP_ERROR_CHECK(esp_eth_start(eth_handle));
+    sdcard_mount2();
+//    ESP_ERROR_CHECK(esp_netif_init());
+//    esp_netif_config_t cfg = ESP_NETIF_DEFAULT_ETH();
+//    esp_netif_t *eth_netif = esp_netif_new(&cfg);
+//
+//    // Init MAC and PHY configs to default
+//    eth_mac_config_t mac_config = ETH_MAC_DEFAULT_CONFIG();
+//    eth_phy_config_t phy_config = ETH_PHY_DEFAULT_CONFIG();
+//
+//    phy_config.phy_addr = 1;
+//    phy_config.reset_gpio_num = 16;
+//    mac_config.smi_mdc_gpio_num = 23;
+//    mac_config.smi_mdio_gpio_num = 18;
+//    esp_eth_mac_t *mac = esp_eth_mac_new_esp32(&mac_config);
+//    esp_eth_phy_t *phy = esp_eth_phy_new_lan87xx(&phy_config);
+//    esp_eth_config_t config = ETH_DEFAULT_CONFIG(mac, phy);
+//    esp_eth_handle_t eth_handle = NULL;
+//    ESP_ERROR_CHECK(esp_eth_driver_install(&config, &eth_handle));
+//    /* attach Ethernet driver to TCP/IP stack */
+//    ESP_ERROR_CHECK(esp_netif_attach(eth_netif, esp_eth_new_netif_glue(eth_handle)));
+//    // Register user defined event handers
+//    ESP_ERROR_CHECK(esp_event_handler_register(ETH_EVENT, ESP_EVENT_ANY_ID, &eth_event_handler, NULL));
+//    ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_GOT_IP, &got_ip_event_handler, NULL));
+//    ESP_ERROR_CHECK(esp_eth_start(eth_handle));
+//
+
+
+
+   // ESP_ERROR_CHECK(start_file_server("/sdcard"));
 }
