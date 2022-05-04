@@ -47,6 +47,7 @@ FILE *playFile=NULL;
 #define MAX_FILE_SIZE   (64*1024*1024*1024) // 200 KB
 #define MAX_FILE_SIZE_STR "200KB"
 
+audio_pipeline_handle_t pipeline;
 /* Scratch buffer size */
 #define SCRATCH_BUFSIZE  8192
 
@@ -485,6 +486,7 @@ static esp_err_t play_post_handler(httpd_req_t *req)
 
     playFile= fopen(filepath,"rb");
 
+    audio_pipeline_run(pipeline);
 
     /* Redirect onto root to see the updated file list */
     httpd_resp_set_status(req, "303 See Other");
@@ -505,16 +507,9 @@ static esp_err_t play_post_handler(httpd_req_t *req)
 
 int mp3_music_read_cb(audio_element_handle_t el, char *buf, int len, TickType_t wait_time, void *ctx)
 {
-    while(playFile==NULL){
-        vTaskDelay(10);
-    }
-    int len2=fread(buf,len,1,playFile);
-    if(len2==0){
-        fclose(playFile);
-        playFile=NULL;
-    }
 
-    return len2;
+  fread(buf,len,1,playFile);
+    return len;
 }
 
 
@@ -524,7 +519,6 @@ esp_err_t start_file_server(const char *base_path)
 
 
 
-    audio_pipeline_handle_t pipeline;
     audio_element_handle_t i2s_stream_writer, mp3_decoder;
 
     esp_log_level_set("*", ESP_LOG_WARN);
@@ -533,53 +527,42 @@ esp_err_t start_file_server(const char *base_path)
     ESP_LOGI(TAG, "[ 1 ] Start audio codec chip");
     audio_board_handle_t board_handle = audio_board_init();
     audio_hal_ctrl_codec(board_handle->audio_hal, AUDIO_HAL_CODEC_MODE_BOTH, AUDIO_HAL_CTRL_START);
-
-    int player_volume;
-    audio_hal_get_volume(board_handle->audio_hal, &player_volume);
-
+//
+//    int player_volume;
+//    audio_hal_get_volume(board_handle->audio_hal, &player_volume);
+//
     ESP_LOGI(TAG, "[ 2 ] Create audio pipeline, add all elements to pipeline, and subscribe pipeline event");
     audio_pipeline_cfg_t pipeline_cfg = DEFAULT_AUDIO_PIPELINE_CONFIG();
     pipeline = audio_pipeline_init(&pipeline_cfg);
     mem_assert(pipeline);
-
+//
     ESP_LOGI(TAG, "[2.1] Create mp3 decoder to decode mp3 file and set custom read callback");
     mp3_decoder_cfg_t mp3_cfg = DEFAULT_MP3_DECODER_CONFIG();
     mp3_decoder = mp3_decoder_init(&mp3_cfg);
     audio_element_set_read_cb(mp3_decoder, mp3_music_read_cb, NULL);
-
+//
     ESP_LOGI(TAG, "[2.2] Create i2s stream to write data to codec chip");
     i2s_stream_cfg_t i2s_cfg = I2S_STREAM_CFG_DEFAULT();
     i2s_cfg.type = AUDIO_STREAM_WRITER;
     i2s_stream_writer = i2s_stream_init(&i2s_cfg);
-
+//
     ESP_LOGI(TAG, "[2.3] Register all elements to audio pipeline");
     audio_pipeline_register(pipeline, mp3_decoder, "mp3");
     audio_pipeline_register(pipeline, i2s_stream_writer, "i2s");
-
+//
     ESP_LOGI(TAG, "[2.4] Link it together [mp3_music_read_cb]-->mp3_decoder-->i2s_stream-->[codec_chip]");
     const char *link_tag[2] = {"mp3", "i2s"};
     audio_pipeline_link(pipeline, &link_tag[0], 2);
 
-    ESP_LOGI(TAG, "[ 3 ] Initialize peripherals");
-    esp_periph_config_t periph_cfg = DEFAULT_ESP_PERIPH_SET_CONFIG();
-    esp_periph_set_handle_t set = esp_periph_set_init(&periph_cfg);
-
-    ESP_LOGI(TAG, "[3.1] Initialize keys on board");
-    audio_board_key_init(set);
-
-    ESP_LOGI(TAG, "[ 4 ] Set up  event listener");
     audio_event_iface_cfg_t evt_cfg = AUDIO_EVENT_IFACE_DEFAULT_CFG();
     audio_event_iface_handle_t evt = audio_event_iface_init(&evt_cfg);
 
     ESP_LOGI(TAG, "[4.1] Listening event from all elements of pipeline");
     audio_pipeline_set_listener(pipeline, evt);
 
-    ESP_LOGI(TAG, "[4.2] Listening event from peripherals");
-    audio_event_iface_set_listener(esp_periph_set_get_event_iface(set), evt);
 
 
 
-    audio_pipeline_run(pipeline);
 
 
 

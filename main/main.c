@@ -12,6 +12,8 @@
 #include <sys/unistd.h>
 #include <sys/stat.h>
 #include <sys/param.h>
+
+
 #include "esp_wifi.h"
 #include "esp_event.h"
 #include "esp_log.h"
@@ -27,37 +29,37 @@
 #include "driver/spi_common.h"
 #include "sdmmc_cmd.h"
 #include "soc/soc_caps.h"
-#if SOC_SDMMC_HOST_SUPPORTED
+
+
 #include "driver/sdmmc_host.h"
-#endif
+
+#include <freertos/event_groups.h>
 
 /* This example demonstrates how to create file server
  * using esp_http_server. This file has only startup code.
  * Look in file_server.c for the implementation */
 
 #define MOUNT_POINT "/sdcard"
-static const char *TAG="example";
+static const char *TAG = "example";
 /* ESP32-S2/C3 doesn't have an SD Host peripheral, always use SPI,
  * ESP32 can choose SPI or SDMMC Host, SPI is used by default: */
 
+esp_netif_t *wifiSTA;
 
-
-
-static sdmmc_card_t* mount_card = NULL;
-static char * mount_base_path = MOUNT_POINT;
+static sdmmc_card_t *mount_card = NULL;
+static char *mount_base_path = MOUNT_POINT;
 
 
 esp_err_t start_file_server(const char *base_path);
 
-void sdcard_mount(void)
-{
+void sdcard_mount2(void) {
     /*sd_card part code*/
     esp_vfs_fat_sdmmc_mount_config_t mount_config = {
-        .format_if_mount_failed = false,
-        .max_files = 5,
-        .allocation_unit_size = 16 * 1024
+            .format_if_mount_failed = false,
+            .max_files = 5,
+            .allocation_unit_size = 16 * 1024
     };
-    sdmmc_card_t* card;
+    sdmmc_card_t *card;
     const char mount_point[] = MOUNT_POINT;
     ESP_LOGI(TAG, "Initializing SD card");
 
@@ -84,13 +86,13 @@ void sdcard_mount(void)
 
     esp_err_t ret = esp_vfs_fat_sdmmc_mount(mount_point, &host, &slot_config, &mount_config, &card);
 
-    if(ret != ESP_OK){
+    if (ret != ESP_OK) {
         if (ret == ESP_FAIL) {
             ESP_LOGE(TAG, "Failed to mount filesystem. "
-                "If you want the card to be formatted, set the EXAMPLE_FORMAT_IF_MOUNT_FAILED menuconfig option.");
+                          "If you want the card to be formatted, set the EXAMPLE_FORMAT_IF_MOUNT_FAILED menuconfig option.");
         } else {
             ESP_LOGE(TAG, "Failed to initialize the card (%s). "
-                "Make sure SD card lines have pull-up resistors in place.", esp_err_to_name(ret));
+                          "Make sure SD card lines have pull-up resistors in place.", esp_err_to_name(ret));
         }
         ESP_ERROR_CHECK(ret);
     }
@@ -98,21 +100,54 @@ void sdcard_mount(void)
 
 }
 
-static esp_err_t unmount_card(const char* base_path, sdmmc_card_t* card)
-{
 
-    esp_err_t err = esp_vfs_fat_sdmmc_unmount();
-    ESP_ERROR_CHECK(err);
-    return err;
+static EventGroupHandle_t wifi_event_group;
+const int WIFI_CONNECTED_BIT = BIT0;
+static esp_err_t wifi_event_handler(void *ctx, system_event_t *event) {
+    esp_netif_dns_info_t dns;
+
+    switch (event->event_id) {
+        case SYSTEM_EVENT_STA_START:
+            esp_wifi_connect();
+            break;
+        case SYSTEM_EVENT_STA_GOT_IP:
+            ESP_LOGI(TAG, "got ip:" IPSTR, IP2STR(&event->event_info.got_ip.ip_info.ip));
+            xEventGroupSetBits(wifi_event_group, WIFI_CONNECTED_BIT);
+            break;
+        case SYSTEM_EVENT_STA_DISCONNECTED:
+            ESP_LOGI(TAG, "disconnected - retry to connect to the AP");
+            esp_wifi_connect();
+            xEventGroupClearBits(wifi_event_group, WIFI_CONNECTED_BIT);
+            break;
+
+        default:
+            break;
+    }
+    return ESP_OK;
+}
+const int CONNECTED_BIT = BIT0;
+#define JOIN_TIMEOUT_MS (2000)
+void wifi_init(const char *ssid, const char *passwd) {
+    wifi_event_group = xEventGroupCreate();
+    esp_netif_init();
+    wifiSTA = esp_netif_create_default_wifi_sta();
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
+    ESP_ERROR_CHECK(esp_event_loop_init(wifi_event_handler, NULL));
+    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
+    wifi_config_t wifi_config = {0};
+    strlcpy((char *) wifi_config.sta.ssid, ssid, sizeof(wifi_config.sta.ssid));
+    strlcpy((char *) wifi_config.sta.password, passwd, sizeof(wifi_config.sta.password));
+    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
+    ESP_ERROR_CHECK(esp_wifi_set_config(ESP_IF_WIFI_STA, &wifi_config));
+    ESP_ERROR_CHECK(esp_wifi_start());
 }
 
 
-void app_main(void)
-{
-    sdcard_mount();
+void app_main(void) {
+    sdcard_mount2();
     ESP_ERROR_CHECK(nvs_flash_init());
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
-
+    wifi_init("vaca","22345678");
     ESP_ERROR_CHECK(start_file_server("/sdcard"));
 }
