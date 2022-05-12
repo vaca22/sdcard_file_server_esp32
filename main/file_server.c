@@ -655,6 +655,7 @@ esp_err_t start_file_server(const char *base_path)
 
 
 
+/*
     ESP_ERROR_CHECK(esp_netif_init());
     // Create default event loop that running in background
     ESP_ERROR_CHECK(esp_event_loop_create_default());
@@ -677,12 +678,15 @@ esp_err_t start_file_server(const char *base_path)
     esp_eth_config_t config2 = ETH_DEFAULT_CONFIG(mac, phy);
     esp_eth_handle_t eth_handle = NULL;
     ESP_ERROR_CHECK(esp_eth_driver_install(&config2, &eth_handle));
-    /* attach Ethernet driver to TCP/IP stack */
+    */
+/* attach Ethernet driver to TCP/IP stack *//*
+
     ESP_ERROR_CHECK(esp_netif_attach(eth_netif, esp_eth_new_netif_glue(eth_handle)));
     // Register user defined event handers
     ESP_ERROR_CHECK(esp_event_handler_register(ETH_EVENT, ESP_EVENT_ANY_ID, &eth_event_handler, NULL));
     ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT, IP_EVENT_ETH_GOT_IP, &got_ip_event_handler, NULL));
     ESP_ERROR_CHECK(esp_eth_start(eth_handle));
+*/
 
 
 
