@@ -64,7 +64,7 @@ FILE *playFile=NULL;
 
 #define FILE_PATH_MAX (ESP_VFS_PATH_MAX + CONFIG_SPIFFS_OBJ_NAME_LEN)
 
-
+audio_element_handle_t i2s_stream_writer, mp3_decoder;
 
 audio_pipeline_handle_t pipeline;
 
@@ -379,9 +379,56 @@ static esp_err_t play_post_handler(httpd_req_t *req)
 
     ESP_LOGI(TAG, "Play file : %s", filename);
 
-    playFile= fopen(filepath,"rb");
 
-    audio_pipeline_run(pipeline);
+    audio_element_state_t el_state = audio_element_get_state(i2s_stream_writer);
+    if(el_state==AEL_STATE_PAUSED){
+        audio_pipeline_resume(pipeline);
+    }else{
+        if(playFile!=NULL){
+            fclose(playFile);
+            playFile=NULL;
+        }
+        playFile= fopen(filepath,"rb");
+        audio_pipeline_run(pipeline);
+    }
+
+
+    httpd_resp_set_status(req, "303 See Other");
+    httpd_resp_set_hdr(req, "Location", "/");
+    httpd_resp_set_hdr(req, "Connection", "close");
+    httpd_resp_sendstr(req, "File play successfully");
+    return ESP_OK;
+}
+
+
+static esp_err_t pause_post_handler(httpd_req_t *req)
+{
+    char filepath[FILE_PATH_MAX];
+    struct stat file_stat;
+
+    const char *filename = get_path_from_uri(filepath, ((struct file_server_data *)req->user_ctx)->base_path,
+                                             req->uri  + sizeof("/play") - 1, sizeof(filepath));
+    if (!filename) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Filename too long");
+        return ESP_FAIL;
+    }
+
+    if (filename[strlen(filename) - 1] == '/') {
+        ESP_LOGE(TAG, "Invalid filename : %s", filename);
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Invalid filename");
+        return ESP_FAIL;
+    }
+
+    if (stat(filepath, &file_stat) == -1) {
+        ESP_LOGE(TAG, "File does not exist x1: %s", filename);
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "File does not exist x23");
+        return ESP_FAIL;
+    }
+
+    ESP_LOGI(TAG, "Play file : %s", filename);
+
+
+    audio_pipeline_pause(pipeline);
 
     httpd_resp_set_status(req, "303 See Other");
     httpd_resp_set_hdr(req, "Location", "/");
@@ -393,14 +440,13 @@ static esp_err_t play_post_handler(httpd_req_t *req)
 
 
 
-
-
 int mp3_music_read_cb(audio_element_handle_t el, char *buf, int len, TickType_t wait_time, void *ctx)
 {
   int a=fread(buf,len,1,playFile);
   if(a==0){
-      close(playFile);
+      fclose(playFile);
       playFile=NULL;
+      return  AEL_IO_DONE;
   }
     return len;
 }
@@ -409,7 +455,7 @@ int mp3_music_read_cb(audio_element_handle_t el, char *buf, int len, TickType_t 
 
 esp_err_t start_file_server(const char *base_path)
 {
-    audio_element_handle_t i2s_stream_writer, mp3_decoder;
+
     esp_log_level_set("*", ESP_LOG_WARN);
     esp_log_level_set(TAG, ESP_LOG_INFO);
 
@@ -501,7 +547,14 @@ esp_err_t start_file_server(const char *base_path)
             .handler   = play_post_handler,
             .user_ctx  = server_data
     };
+    httpd_uri_t file_pause = {
+            .uri       = "/pause/*",
+            .method    = HTTP_POST,
+            .handler   = pause_post_handler,
+            .user_ctx  = server_data
+    };
     httpd_register_uri_handler(server, &file_delete);
     httpd_register_uri_handler(server, &file_play);
+    httpd_register_uri_handler(server, &file_pause);
     return ESP_OK;
 }
