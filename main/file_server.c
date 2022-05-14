@@ -68,7 +68,7 @@ audio_element_handle_t i2s_stream_writer, mp3_decoder;
 
 audio_pipeline_handle_t pipeline;
 
-#define SCRATCH_BUFSIZE  1500
+#define SCRATCH_BUFSIZE  15000
 
 struct file_server_data {
     char base_path[ESP_VFS_PATH_MAX + 1];
