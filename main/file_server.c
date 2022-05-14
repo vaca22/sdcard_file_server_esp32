@@ -81,7 +81,7 @@ static const char *TAG = "file_server";
 
 
 
-
+static char  rec_buf[64*1024];
 
 
 #define IS_FILE_EXT(filename, ext) \
@@ -273,6 +273,7 @@ static esp_err_t upload_post_handler(httpd_req_t *req)
 
 
     int remaining = req->content_len;
+    int index=0;
 
     while (remaining > 0) {
 
@@ -289,14 +290,22 @@ static esp_err_t upload_post_handler(httpd_req_t *req)
             return ESP_FAIL;
         }
 
+        if(received>0){
+            for(int k=0;k<received;k++){
+                if(index<65536){
+                    rec_buf[index]=buf[k];
+                    index++;
+                }else{
+                    index=0;
+                    fwrite(rec_buf,65536,1,fd);
+                }
+            }
+        }
 
-        if (received && (received != fwrite(buf, 1, received, fd))) {
-            fclose(fd);
-            unlink(filepath);
-
-            ESP_LOGE(TAG, "File write failed!");
-            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to write file to storage");
-            return ESP_FAIL;
+        if(remaining==received){
+            if(received<65536){
+                fwrite(buf,received,1,fd);
+            }
         }
 
         remaining -= received;
