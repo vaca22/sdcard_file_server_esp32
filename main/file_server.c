@@ -68,7 +68,7 @@ audio_element_handle_t i2s_stream_writer, mp3_decoder;
 
 audio_pipeline_handle_t pipeline;
 
-#define SCRATCH_BUFSIZE  8192
+#define SCRATCH_BUFSIZE  1500
 
 struct file_server_data {
     char base_path[ESP_VFS_PATH_MAX + 1];
@@ -298,6 +298,8 @@ static esp_err_t upload_post_handler(httpd_req_t *req)
                 }else{
                     index=0;
                     fwrite(rec_buf,65536,1,fd);
+                    rec_buf[index]=buf[k];
+                    index++;
                 }
             }
         }
