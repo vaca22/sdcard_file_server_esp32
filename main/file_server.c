@@ -389,7 +389,15 @@ static esp_err_t play_post_handler(httpd_req_t *req)
             playFile=NULL;
         }
         playFile= fopen(filepath,"rb");
-        audio_pipeline_run(pipeline);
+        if(el_state==AEL_STATE_FINISHED){
+            audio_pipeline_reset_ringbuffer(pipeline);
+            audio_pipeline_reset_elements(pipeline);
+            audio_pipeline_change_state(pipeline, AEL_STATE_INIT);
+            audio_pipeline_run(pipeline);
+        }else if(el_state==AEL_STATE_INIT){
+            audio_pipeline_run(pipeline);
+        }
+
     }
 
 
@@ -403,33 +411,7 @@ static esp_err_t play_post_handler(httpd_req_t *req)
 
 static esp_err_t pause_post_handler(httpd_req_t *req)
 {
-    char filepath[FILE_PATH_MAX];
-    struct stat file_stat;
-
-    const char *filename = get_path_from_uri(filepath, ((struct file_server_data *)req->user_ctx)->base_path,
-                                             req->uri  + sizeof("/play") - 1, sizeof(filepath));
-    if (!filename) {
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Filename too long");
-        return ESP_FAIL;
-    }
-
-    if (filename[strlen(filename) - 1] == '/') {
-        ESP_LOGE(TAG, "Invalid filename : %s", filename);
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Invalid filename");
-        return ESP_FAIL;
-    }
-
-    if (stat(filepath, &file_stat) == -1) {
-        ESP_LOGE(TAG, "File does not exist x1: %s", filename);
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "File does not exist x23");
-        return ESP_FAIL;
-    }
-
-    ESP_LOGI(TAG, "Play file : %s", filename);
-
-
     audio_pipeline_pause(pipeline);
-
     httpd_resp_set_status(req, "303 See Other");
     httpd_resp_set_hdr(req, "Location", "/");
     httpd_resp_set_hdr(req, "Connection", "close");
