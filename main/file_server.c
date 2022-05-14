@@ -353,6 +353,8 @@ static esp_err_t delete_post_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
+char lastSong[200];
+
 static esp_err_t play_post_handler(httpd_req_t *req)
 {
     char filepath[FILE_PATH_MAX];
@@ -380,9 +382,21 @@ static esp_err_t play_post_handler(httpd_req_t *req)
     ESP_LOGI(TAG, "Play file : %s", filename);
 
 
+
+
     audio_element_state_t el_state = audio_element_get_state(i2s_stream_writer);
     if(el_state==AEL_STATE_PAUSED){
-        audio_pipeline_resume(pipeline);
+        if(strcmp(lastSong,filename)==0){
+            audio_pipeline_resume(pipeline);
+        }else{
+            if(playFile!=NULL){
+                fclose(playFile);
+                playFile=NULL;
+            }
+            playFile= fopen(filepath,"rb");
+            audio_pipeline_resume(pipeline);
+        }
+
     }else{
         if(playFile!=NULL){
             fclose(playFile);
@@ -400,6 +414,7 @@ static esp_err_t play_post_handler(httpd_req_t *req)
 
     }
 
+    strcpy(lastSong,filename);
 
     httpd_resp_set_status(req, "303 See Other");
     httpd_resp_set_hdr(req, "Location", "/");
