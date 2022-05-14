@@ -79,8 +79,8 @@ struct file_server_data {
 static const char *TAG = "file_server";
 
 
-char *rec_buf;
-static char card_buf[65536];
+static char rec_buf[16384];
+static char card_buf[16384];
 
 
 #define IS_FILE_EXT(filename, ext) \
@@ -313,12 +313,12 @@ static esp_err_t upload_post_handler(httpd_req_t *req) {
 
         if (received > 0) {
             for (int k = 0; k < received; k++) {
-                if (index < 65536) {
+                if (index < 16384) {
                     rec_buf[index] = buf[k];
                     index++;
                 } else {
                     index = 0;
-                    fwrite(rec_buf, 65536, 1, fd);
+                    fwrite(rec_buf, 16384, 1, fd);
                     rec_buf[index] = buf[k];
                     index++;
                 }
@@ -326,7 +326,7 @@ static esp_err_t upload_post_handler(httpd_req_t *req) {
         }
 
         if (remaining == received) {
-            if (received < 65536) {
+            if (received < 16384) {
                 fwrite(buf, received, 1, fd);
             }
         }
@@ -549,8 +549,6 @@ static void chem1_task(void *pvParameters) {
 }
 
 esp_err_t start_file_server() {
-    rec_buf = malloc(64 * 1024);
-
     esp_log_level_set("*", ESP_LOG_WARN);
     esp_log_level_set(TAG, ESP_LOG_INFO);
 
