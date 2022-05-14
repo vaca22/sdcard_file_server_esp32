@@ -560,6 +560,7 @@ esp_err_t start_file_server() {
     pipeline = audio_pipeline_init(&pipeline_cfg);
 
     mp3_decoder_cfg_t mp3_cfg = DEFAULT_MP3_DECODER_CONFIG();
+    mp3_cfg.out_rb_size = 64 * 1024;
     mp3_decoder = mp3_decoder_init(&mp3_cfg);
     audio_element_set_read_cb(mp3_decoder, mp3_music_read_cb, NULL);
 
