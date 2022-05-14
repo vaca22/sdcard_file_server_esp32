@@ -40,7 +40,7 @@ static sdmmc_card_t *mount_card = NULL;
 static char *mount_base_path = MOUNT_POINT;
 
 
-esp_err_t start_file_server(const char *base_path);
+esp_err_t start_file_server();
 
 void sdcard_mount2(void) {
     esp_vfs_fat_sdmmc_mount_config_t mount_config = {
@@ -163,6 +163,6 @@ void app_main(void) {
     ESP_ERROR_CHECK(ret);
     wifi_init_sta();
     sdcard_mount2();
-    start_file_server("/sdcard");
+    start_file_server();
 
 }

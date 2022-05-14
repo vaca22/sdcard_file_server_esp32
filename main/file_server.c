@@ -60,7 +60,8 @@
 #include <driver/periph_ctrl.h>
 #include <cJSON.h>
 
-FILE *playFile=NULL;
+static TaskHandle_t chem1_task_h;
+FILE *playFile = NULL;
 
 #define FILE_PATH_MAX (256)
 
@@ -78,39 +79,33 @@ struct file_server_data {
 static const char *TAG = "file_server";
 
 
-
-
-
-static char  rec_buf[64*1024];
+char *rec_buf;
+static char card_buf[65536];
 
 
 #define IS_FILE_EXT(filename, ext) \
     (strcasecmp(&filename[strlen(filename) - sizeof(ext) + 1], ext) == 0)
 
-void preprocess_string(char* str)
-{
+void preprocess_string(char *str) {
     char *p, *q;
 
-    for (p = q = str; *p != 0; p++)
-    {
-        if (*(p) == '%' && *(p + 1) != 0 && *(p + 2) != 0)
-        {
+    for (p = q = str; *p != 0; p++) {
+        if (*(p) == '%' && *(p + 1) != 0 && *(p + 2) != 0) {
             // quoted hex
             uint8_t a;
             p++;
             if (*p <= '9')
                 a = *p - '0';
             else
-                a = toupper((unsigned char)*p) - 'A' + 10;
+                a = toupper((unsigned char) *p) - 'A' + 10;
             a <<= 4;
             p++;
             if (*p <= '9')
                 a += *p - '0';
             else
-                a += toupper((unsigned char)*p) - 'A' + 10;
+                a += toupper((unsigned char) *p) - 'A' + 10;
             *q++ = a;
-        }
-        else if (*(p) == '+') {
+        } else if (*(p) == '+') {
             *q++ = ' ';
         } else {
             *q++ = *p;
@@ -119,8 +114,7 @@ void preprocess_string(char* str)
     *q = '\0';
 }
 
-static esp_err_t set_content_type_from_file(httpd_req_t *req, const char *filename)
-{
+static esp_err_t set_content_type_from_file(httpd_req_t *req, const char *filename) {
     if (IS_FILE_EXT(filename, ".pdf")) {
         return httpd_resp_set_type(req, "application/pdf");
     } else if (IS_FILE_EXT(filename, ".html")) {
@@ -135,10 +129,9 @@ static esp_err_t set_content_type_from_file(httpd_req_t *req, const char *filena
 }
 
 
-static const char* get_path_from_uri(char *dest, const char *base_path, const char *uri2, size_t destsize)
-{
-   char uri[260];
-    strcpy(uri,uri2);
+static const char *get_path_from_uri(char *dest, const char *base_path, const char *uri2, size_t destsize) {
+    char uri[260];
+    strcpy(uri, uri2);
     preprocess_string(uri);
     const size_t base_pathlen = strlen(base_path);
     size_t pathlen = strlen(uri);
@@ -164,8 +157,7 @@ static const char* get_path_from_uri(char *dest, const char *base_path, const ch
 }
 
 
-static esp_err_t http_resp_dir_html(httpd_req_t *req, const char *dirpath)
-{
+static esp_err_t http_resp_dir_html(httpd_req_t *req, const char *dirpath) {
     char entrypath[FILE_PATH_MAX];
     char entrysize[16];
     const char *entrytype;
@@ -183,10 +175,10 @@ static esp_err_t http_resp_dir_html(httpd_req_t *req, const char *dirpath)
         httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Directory does not exist");
         return ESP_FAIL;
     }
-    cJSON *files= cJSON_CreateArray();
+    cJSON *files = cJSON_CreateArray();
     while ((entry = readdir(dir)) != NULL) {
         entrytype = (entry->d_type == DT_DIR ? "directory" : "file");
-        if(entry->d_type==DT_DIR){
+        if (entry->d_type == DT_DIR) {
             continue;
         }
         strlcpy(entrypath + dirpath_len, entry->d_name, sizeof(entrypath) - dirpath_len);
@@ -198,7 +190,6 @@ static esp_err_t http_resp_dir_html(httpd_req_t *req, const char *dirpath)
     }
 
 
-
     httpd_resp_sendstr_chunk(req, cJSON_Print(files));
 
     httpd_resp_sendstr_chunk(req, NULL);
@@ -207,15 +198,12 @@ static esp_err_t http_resp_dir_html(httpd_req_t *req, const char *dirpath)
 }
 
 
-
-
-static esp_err_t download_get_handler(httpd_req_t *req)
-{
+static esp_err_t download_get_handler(httpd_req_t *req) {
     char filepath[FILE_PATH_MAX];
     FILE *fd = NULL;
     struct stat file_stat;
 
-    const char *filename = get_path_from_uri(filepath, ((struct file_server_data *)req->user_ctx)->base_path,
+    const char *filename = get_path_from_uri(filepath, ((struct file_server_data *) req->user_ctx)->base_path,
                                              req->uri, sizeof(filepath));
     if (!filename) {
         ESP_LOGE(TAG, "Filename is too long");
@@ -241,7 +229,7 @@ static esp_err_t download_get_handler(httpd_req_t *req)
     ESP_LOGI(TAG, "Sending file : %s (%ld bytes)...", filename, file_stat.st_size);
     set_content_type_from_file(req, filename);
 
-    char *chunk = ((struct file_server_data *)req->user_ctx)->scratch;
+    char *chunk = ((struct file_server_data *) req->user_ctx)->scratch;
     size_t chunksize;
     do {
         chunksize = fread(chunk, 1, SCRATCH_BUFSIZE, fd);
@@ -251,8 +239,8 @@ static esp_err_t download_get_handler(httpd_req_t *req)
                 ESP_LOGE(TAG, "File sending failed!");
                 httpd_resp_sendstr_chunk(req, NULL);
                 httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to send file");
-               return ESP_FAIL;
-           }
+                return ESP_FAIL;
+            }
         }
     } while (chunksize != 0);
 
@@ -264,14 +252,14 @@ static esp_err_t download_get_handler(httpd_req_t *req)
 }
 
 
-static esp_err_t upload_post_handler(httpd_req_t *req)
-{
+static esp_err_t upload_post_handler(httpd_req_t *req) {
     char filepath[FILE_PATH_MAX];
     FILE *fd = NULL;
     struct stat file_stat;
 
-
-    const char *filename = get_path_from_uri(filepath, ((struct file_server_data *)req->user_ctx)->base_path,
+    int x = xPortGetCoreID();
+    ESP_LOGI(TAG, "Corefuckx  %d", x);
+    const char *filename = get_path_from_uri(filepath, ((struct file_server_data *) req->user_ctx)->base_path,
                                              req->uri + sizeof("/upload") - 1, sizeof(filepath));
     if (!filename) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Filename too long");
@@ -291,7 +279,6 @@ static esp_err_t upload_post_handler(httpd_req_t *req)
     }
 
 
-
     fd = fopen(filepath, "w");
     if (!fd) {
         ESP_LOGE(TAG, "Failed to create file : %s", filepath);
@@ -302,12 +289,12 @@ static esp_err_t upload_post_handler(httpd_req_t *req)
     ESP_LOGI(TAG, "Receiving file : %s...", filename);
 
 
-    char *buf = ((struct file_server_data *)req->user_ctx)->scratch;
+    char *buf = ((struct file_server_data *) req->user_ctx)->scratch;
     int received;
 
 
     int remaining = req->content_len;
-    int index=0;
+    int index = 0;
 
     while (remaining > 0) {
 
@@ -324,23 +311,23 @@ static esp_err_t upload_post_handler(httpd_req_t *req)
             return ESP_FAIL;
         }
 
-        if(received>0){
-            for(int k=0;k<received;k++){
-                if(index<65536){
-                    rec_buf[index]=buf[k];
+        if (received > 0) {
+            for (int k = 0; k < received; k++) {
+                if (index < 65536) {
+                    rec_buf[index] = buf[k];
                     index++;
-                }else{
-                    index=0;
-                    fwrite(rec_buf,65536,1,fd);
-                    rec_buf[index]=buf[k];
+                } else {
+                    index = 0;
+                    fwrite(rec_buf, 65536, 1, fd);
+                    rec_buf[index] = buf[k];
                     index++;
                 }
             }
         }
 
-        if(remaining==received){
-            if(received<65536){
-                fwrite(buf,received,1,fd);
+        if (remaining == received) {
+            if (received < 65536) {
+                fwrite(buf, received, 1, fd);
             }
         }
 
@@ -361,14 +348,13 @@ static esp_err_t upload_post_handler(httpd_req_t *req)
 }
 
 
-static esp_err_t delete_post_handler(httpd_req_t *req)
-{
+static esp_err_t delete_post_handler(httpd_req_t *req) {
     char filepath[FILE_PATH_MAX];
     struct stat file_stat;
 
 
-    const char *filename = get_path_from_uri(filepath, ((struct file_server_data *)req->user_ctx)->base_path,
-                                             req->uri  + sizeof("/delete") - 1, sizeof(filepath));
+    const char *filename = get_path_from_uri(filepath, ((struct file_server_data *) req->user_ctx)->base_path,
+                                             req->uri + sizeof("/delete") - 1, sizeof(filepath));
     if (!filename) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Filename too long");
         return ESP_FAIL;
@@ -400,13 +386,12 @@ static esp_err_t delete_post_handler(httpd_req_t *req)
 
 char lastSong[200];
 
-static esp_err_t play_post_handler(httpd_req_t *req)
-{
+static esp_err_t play_post_handler(httpd_req_t *req) {
     char filepath[FILE_PATH_MAX];
     struct stat file_stat;
 
-    const char *filename = get_path_from_uri(filepath, ((struct file_server_data *)req->user_ctx)->base_path,
-                                             req->uri  + sizeof("/play") - 1, sizeof(filepath));
+    const char *filename = get_path_from_uri(filepath, ((struct file_server_data *) req->user_ctx)->base_path,
+                                             req->uri + sizeof("/play") - 1, sizeof(filepath));
     if (!filename) {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Filename too long");
         return ESP_FAIL;
@@ -427,39 +412,39 @@ static esp_err_t play_post_handler(httpd_req_t *req)
     ESP_LOGI(TAG, "Play file : %s", filename);
 
 
-
-
     audio_element_state_t el_state = audio_element_get_state(i2s_stream_writer);
-    if(el_state==AEL_STATE_PAUSED){
-        if(strcmp(lastSong,filename)==0){
+    if (el_state == AEL_STATE_PAUSED) {
+        if (strcmp(lastSong, filename) == 0) {
             audio_pipeline_resume(pipeline);
-        }else{
-            if(playFile!=NULL){
+        } else {
+            if (playFile != NULL) {
                 fclose(playFile);
-                playFile=NULL;
+                playFile = NULL;
             }
-            playFile= fopen(filepath,"rb");
+            playFile = fopen(filepath, "rb");
+            setvbuf(playFile, card_buf, _IOFBF, 65536);
             audio_pipeline_resume(pipeline);
         }
 
-    }else{
-        if(playFile!=NULL){
+    } else {
+        if (playFile != NULL) {
             fclose(playFile);
-            playFile=NULL;
+            playFile = NULL;
         }
-        playFile= fopen(filepath,"rb");
-        if(el_state==AEL_STATE_FINISHED){
+        playFile = fopen(filepath, "rb");
+        setvbuf(playFile, card_buf, _IOFBF, 65536);
+        if (el_state == AEL_STATE_FINISHED) {
             audio_pipeline_reset_ringbuffer(pipeline);
             audio_pipeline_reset_elements(pipeline);
             audio_pipeline_change_state(pipeline, AEL_STATE_INIT);
             audio_pipeline_run(pipeline);
-        }else if(el_state==AEL_STATE_INIT){
+        } else if (el_state == AEL_STATE_INIT) {
             audio_pipeline_run(pipeline);
         }
 
     }
 
-    strcpy(lastSong,filename);
+    strcpy(lastSong, filename);
 
     httpd_resp_set_status(req, "303 See Other");
     httpd_resp_set_hdr(req, "Location", "/");
@@ -469,8 +454,7 @@ static esp_err_t play_post_handler(httpd_req_t *req)
 }
 
 
-static esp_err_t pause_post_handler(httpd_req_t *req)
-{
+static esp_err_t pause_post_handler(httpd_req_t *req) {
     audio_pipeline_pause(pipeline);
     httpd_resp_set_status(req, "303 See Other");
     httpd_resp_set_hdr(req, "Location", "/");
@@ -480,68 +464,29 @@ static esp_err_t pause_post_handler(httpd_req_t *req)
 }
 
 
+int mp3_music_read_cb(audio_element_handle_t el, char *buf, int len, TickType_t wait_time, void *ctx) {
 
-
-int mp3_music_read_cb(audio_element_handle_t el, char *buf, int len, TickType_t wait_time, void *ctx)
-{
-  int a=fread(buf,len,1,playFile);
-  if(a==0){
-      fclose(playFile);
-      playFile=NULL;
-      return  AEL_IO_DONE;
-  }
+    int a = fread(buf, len, 1, playFile);
+    if (a == 0) {
+        fclose(playFile);
+        playFile = NULL;
+        return AEL_IO_DONE;
+    }
     return len;
 }
 
-
-
-esp_err_t start_file_server(const char *base_path)
-{
-
-    esp_log_level_set("*", ESP_LOG_WARN);
-    esp_log_level_set(TAG, ESP_LOG_INFO);
-
-    audio_board_handle_t board_handle = audio_board_init();
-    audio_hal_ctrl_codec(board_handle->audio_hal, AUDIO_HAL_CODEC_MODE_BOTH, AUDIO_HAL_CTRL_START);
-    audio_pipeline_cfg_t pipeline_cfg = DEFAULT_AUDIO_PIPELINE_CONFIG();
-    pipeline = audio_pipeline_init(&pipeline_cfg);
-
-    mp3_decoder_cfg_t mp3_cfg = DEFAULT_MP3_DECODER_CONFIG();
-    mp3_decoder = mp3_decoder_init(&mp3_cfg);
-    audio_element_set_read_cb(mp3_decoder, mp3_music_read_cb, NULL);
-
-    i2s_stream_cfg_t i2s_cfg = I2S_STREAM_CFG_DEFAULT();
-    i2s_cfg.type = AUDIO_STREAM_WRITER;
-    i2s_cfg.i2s_config.use_apll=false;
-    i2s_cfg.use_alc=false;
-
-    i2s_stream_writer = i2s_stream_init(&i2s_cfg);
-
-
-
-    audio_pipeline_register(pipeline, mp3_decoder, "mp3");
-    audio_pipeline_register(pipeline, i2s_stream_writer, "i2s");
-
-    const char *link_tag[2] = {"mp3", "i2s"};
-    audio_pipeline_link(pipeline, &link_tag[0], 2);
-
-    audio_event_iface_cfg_t evt_cfg = AUDIO_EVENT_IFACE_DEFAULT_CFG();
-    audio_event_iface_handle_t evt = audio_event_iface_init(&evt_cfg);
-
-    ESP_LOGI(TAG, "[4.1] Listening event from all elements of pipeline");
-    audio_pipeline_set_listener(pipeline, evt);
+static void chem1_task(void *pvParameters) {
+    const char *base_path = "/sdcard";
     static struct file_server_data *server_data = NULL;
 
 
     if (server_data) {
         ESP_LOGE(TAG, "File server already started");
-        return ESP_ERR_INVALID_STATE;
     }
 
     server_data = calloc(1, sizeof(struct file_server_data));
     if (!server_data) {
         ESP_LOGE(TAG, "Failed to allocate memory for server data");
-        return ESP_ERR_NO_MEM;
     }
     strlcpy(server_data->base_path, base_path,
             sizeof(server_data->base_path));
@@ -554,33 +499,32 @@ esp_err_t start_file_server(const char *base_path)
     ESP_LOGI(TAG, "Starting HTTP Server on port: '%d'", config.server_port);
     if (httpd_start(&server, &config) != ESP_OK) {
         ESP_LOGE(TAG, "Failed to start file server!");
-        return ESP_FAIL;
     }
 
 
     httpd_uri_t file_download = {
-        .uri       = "/*",
-        .method    = HTTP_GET,
-        .handler   = download_get_handler,
-        .user_ctx  = server_data
+            .uri       = "/*",
+            .method    = HTTP_GET,
+            .handler   = download_get_handler,
+            .user_ctx  = server_data
     };
     httpd_register_uri_handler(server, &file_download);
 
 
     httpd_uri_t file_upload = {
-        .uri       = "/upload/*",
-        .method    = HTTP_POST,
-        .handler   = upload_post_handler,
-        .user_ctx  = server_data
+            .uri       = "/upload/*",
+            .method    = HTTP_POST,
+            .handler   = upload_post_handler,
+            .user_ctx  = server_data
     };
     httpd_register_uri_handler(server, &file_upload);
 
 
     httpd_uri_t file_delete = {
-        .uri       = "/delete/*",
-        .method    = HTTP_POST,
-        .handler   = delete_post_handler,
-        .user_ctx  = server_data
+            .uri       = "/delete/*",
+            .method    = HTTP_POST,
+            .handler   = delete_post_handler,
+            .user_ctx  = server_data
     };
 
     httpd_uri_t file_play = {
@@ -598,5 +542,51 @@ esp_err_t start_file_server(const char *base_path)
     httpd_register_uri_handler(server, &file_delete);
     httpd_register_uri_handler(server, &file_play);
     httpd_register_uri_handler(server, &file_pause);
+    while (1) {
+
+        vTaskDelay(1000);
+    }
+}
+
+esp_err_t start_file_server() {
+    rec_buf = malloc(64 * 1024);
+
+    esp_log_level_set("*", ESP_LOG_WARN);
+    esp_log_level_set(TAG, ESP_LOG_INFO);
+
+    audio_board_handle_t board_handle = audio_board_init();
+    audio_hal_ctrl_codec(board_handle->audio_hal, AUDIO_HAL_CODEC_MODE_BOTH, AUDIO_HAL_CTRL_START);
+    audio_pipeline_cfg_t pipeline_cfg = DEFAULT_AUDIO_PIPELINE_CONFIG();
+    pipeline = audio_pipeline_init(&pipeline_cfg);
+
+    mp3_decoder_cfg_t mp3_cfg = DEFAULT_MP3_DECODER_CONFIG();
+    mp3_decoder = mp3_decoder_init(&mp3_cfg);
+    audio_element_set_read_cb(mp3_decoder, mp3_music_read_cb, NULL);
+
+    i2s_stream_cfg_t i2s_cfg = I2S_STREAM_CFG_DEFAULT();
+    i2s_cfg.type = AUDIO_STREAM_WRITER;
+    i2s_cfg.i2s_config.use_apll = false;
+    i2s_cfg.use_alc = false;
+
+    i2s_stream_writer = i2s_stream_init(&i2s_cfg);
+
+
+    audio_pipeline_register(pipeline, mp3_decoder, "mp3");
+    audio_pipeline_register(pipeline, i2s_stream_writer, "i2s");
+
+    const char *link_tag[2] = {"mp3", "i2s"};
+    audio_pipeline_link(pipeline, &link_tag[0], 2);
+
+    audio_event_iface_cfg_t evt_cfg = AUDIO_EVENT_IFACE_DEFAULT_CFG();
+    audio_event_iface_handle_t evt = audio_event_iface_init(&evt_cfg);
+
+    ESP_LOGI(TAG, "[4.1] Listening event from all elements of pipeline");
+    audio_pipeline_set_listener(pipeline, evt);
+
+
+    int x = xPortGetCoreID();
+    ESP_LOGI(TAG, "Corefuckxy  %d", x);
+
+    xTaskCreatePinnedToCore(chem1_task, "chem1", 4096, NULL, configMAX_PRIORITIES, &chem1_task_h, 1);
     return ESP_OK;
 }
