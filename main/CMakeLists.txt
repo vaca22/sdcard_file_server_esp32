@@ -1,3 +1,2 @@
 idf_component_register(SRCS "main.c" "file_server.c"
-                    INCLUDE_DIRS "."
-                    EMBED_FILES "upload_script.html")
+                    INCLUDE_DIRS ".")
