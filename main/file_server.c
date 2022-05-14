@@ -61,7 +61,7 @@
 #include <cJSON.h>
 
 FILE *playFile=NULL;
-/* Max length a file path can have on storage */
+
 #define FILE_PATH_MAX (ESP_VFS_PATH_MAX + CONFIG_SPIFFS_OBJ_NAME_LEN)
 
 
@@ -87,7 +87,7 @@ static const char *TAG = "file_server";
 #define IS_FILE_EXT(filename, ext) \
     (strcasecmp(&filename[strlen(filename) - sizeof(ext) + 1], ext) == 0)
 
-/* Set HTTP response content type according to file extension */
+
 static esp_err_t set_content_type_from_file(httpd_req_t *req, const char *filename)
 {
     if (IS_FILE_EXT(filename, ".pdf")) {
@@ -99,13 +99,11 @@ static esp_err_t set_content_type_from_file(httpd_req_t *req, const char *filena
     } else if (IS_FILE_EXT(filename, ".ico")) {
         return httpd_resp_set_type(req, "image/x-icon");
     }
-    /* This is a limited set only */
-    /* For any other type always set as plain text */
+
     return httpd_resp_set_type(req, "text/plain");
 }
 
-/* Copies the full path into destination buffer and returns
- * pointer to path (skipping the preceding base path) */
+
 static const char* get_path_from_uri(char *dest, const char *base_path, const char *uri, size_t destsize)
 {
     const size_t base_pathlen = strlen(base_path);
@@ -121,15 +119,13 @@ static const char* get_path_from_uri(char *dest, const char *base_path, const ch
     }
 
     if (base_pathlen + pathlen + 1 > destsize) {
-        /* Full path string won't fit into destination buffer */
         return NULL;
     }
 
-    /* Construct full path (base + path) */
+
     strcpy(dest, base_path);
     strlcpy(dest + base_pathlen, uri, pathlen + 1);
 
-    /* Return pointer to path, skipping the base */
     return dest + base_pathlen;
 }
 
@@ -146,12 +142,10 @@ static esp_err_t http_resp_dir_html(httpd_req_t *req, const char *dirpath)
     DIR *dir = opendir(dirpath);
     const size_t dirpath_len = strlen(dirpath);
 
-    /* Retrieve the base path of file storage to construct the full path */
     strlcpy(entrypath, dirpath, sizeof(entrypath));
 
     if (!dir) {
         ESP_LOGE(TAG, "Failed to stat dir : %s", dirpath);
-        /* Respond with 404 Not Found */
         httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Directory does not exist");
         return ESP_FAIL;
     }
@@ -173,8 +167,6 @@ static esp_err_t http_resp_dir_html(httpd_req_t *req, const char *dirpath)
 
     httpd_resp_sendstr_chunk(req, cJSON_Print(files));
 
-
-    /* Send empty chunk to signal HTTP response completion */
     httpd_resp_sendstr_chunk(req, NULL);
     cJSON_Delete(files);
     return ESP_OK;
@@ -193,7 +185,6 @@ static esp_err_t download_get_handler(httpd_req_t *req)
                                              req->uri, sizeof(filepath));
     if (!filename) {
         ESP_LOGE(TAG, "Filename is too long");
-        /* Respond with 500 Internal Server Error */
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Filename too long");
         return ESP_FAIL;
     }
@@ -270,7 +261,6 @@ static esp_err_t upload_post_handler(httpd_req_t *req)
     fd = fopen(filepath, "w");
     if (!fd) {
         ESP_LOGE(TAG, "Failed to create file : %s", filepath);
-        /* Respond with 500 Internal Server Error */
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to create file");
         return ESP_FAIL;
     }
@@ -291,8 +281,6 @@ static esp_err_t upload_post_handler(httpd_req_t *req)
             if (received == HTTPD_SOCK_ERR_TIMEOUT) {
                 continue;
             }
-
-
             fclose(fd);
             unlink(filepath);
 
@@ -409,7 +397,6 @@ static esp_err_t play_post_handler(httpd_req_t *req)
 
 int mp3_music_read_cb(audio_element_handle_t el, char *buf, int len, TickType_t wait_time, void *ctx)
 {
-
   int a=fread(buf,len,1,playFile);
   if(a==0){
       close(playFile);
@@ -463,7 +450,6 @@ esp_err_t start_file_server(const char *base_path)
         return ESP_ERR_INVALID_STATE;
     }
 
-    /* Allocate memory for server data */
     server_data = calloc(1, sizeof(struct file_server_data));
     if (!server_data) {
         ESP_LOGE(TAG, "Failed to allocate memory for server data");
@@ -483,37 +469,37 @@ esp_err_t start_file_server(const char *base_path)
         return ESP_FAIL;
     }
 
-    /* URI handler for getting uploaded files */
+
     httpd_uri_t file_download = {
-        .uri       = "/*",  // Match all URIs of type /path/to/file
+        .uri       = "/*",
         .method    = HTTP_GET,
         .handler   = download_get_handler,
-        .user_ctx  = server_data    // Pass server data as context
+        .user_ctx  = server_data
     };
     httpd_register_uri_handler(server, &file_download);
 
-    /* URI handler for uploading files to server */
+
     httpd_uri_t file_upload = {
-        .uri       = "/upload/*",   // Match all URIs of type /upload/path/to/file
+        .uri       = "/upload/*",
         .method    = HTTP_POST,
         .handler   = upload_post_handler,
-        .user_ctx  = server_data    // Pass server data as context
+        .user_ctx  = server_data
     };
     httpd_register_uri_handler(server, &file_upload);
 
-    /* URI handler for deleting files from server */
+
     httpd_uri_t file_delete = {
-        .uri       = "/delete/*",   // Match all URIs of type /delete/path/to/file
+        .uri       = "/delete/*",
         .method    = HTTP_POST,
         .handler   = delete_post_handler,
-        .user_ctx  = server_data    // Pass server data as context
+        .user_ctx  = server_data
     };
 
     httpd_uri_t file_play = {
-            .uri       = "/play/*",   // Match all URIs of type /delete/path/to/file
+            .uri       = "/play/*",
             .method    = HTTP_POST,
             .handler   = play_post_handler,
-            .user_ctx  = server_data    // Pass server data as context
+            .user_ctx  = server_data
     };
     httpd_register_uri_handler(server, &file_delete);
     httpd_register_uri_handler(server, &file_play);
