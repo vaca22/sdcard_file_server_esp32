@@ -62,7 +62,7 @@
 
 FILE *playFile=NULL;
 
-#define FILE_PATH_MAX (ESP_VFS_PATH_MAX + CONFIG_SPIFFS_OBJ_NAME_LEN)
+#define FILE_PATH_MAX (256)
 
 audio_element_handle_t i2s_stream_writer, mp3_decoder;
 
@@ -87,6 +87,37 @@ static char  rec_buf[64*1024];
 #define IS_FILE_EXT(filename, ext) \
     (strcasecmp(&filename[strlen(filename) - sizeof(ext) + 1], ext) == 0)
 
+void preprocess_string(char* str)
+{
+    char *p, *q;
+
+    for (p = q = str; *p != 0; p++)
+    {
+        if (*(p) == '%' && *(p + 1) != 0 && *(p + 2) != 0)
+        {
+            // quoted hex
+            uint8_t a;
+            p++;
+            if (*p <= '9')
+                a = *p - '0';
+            else
+                a = toupper((unsigned char)*p) - 'A' + 10;
+            a <<= 4;
+            p++;
+            if (*p <= '9')
+                a += *p - '0';
+            else
+                a += toupper((unsigned char)*p) - 'A' + 10;
+            *q++ = a;
+        }
+        else if (*(p) == '+') {
+            *q++ = ' ';
+        } else {
+            *q++ = *p;
+        }
+    }
+    *q = '\0';
+}
 
 static esp_err_t set_content_type_from_file(httpd_req_t *req, const char *filename)
 {
@@ -104,8 +135,11 @@ static esp_err_t set_content_type_from_file(httpd_req_t *req, const char *filena
 }
 
 
-static const char* get_path_from_uri(char *dest, const char *base_path, const char *uri, size_t destsize)
+static const char* get_path_from_uri(char *dest, const char *base_path, const char *uri2, size_t destsize)
 {
+   char uri[260];
+    strcpy(uri,uri2);
+    preprocess_string(uri);
     const size_t base_pathlen = strlen(base_path);
     size_t pathlen = strlen(uri);
 
