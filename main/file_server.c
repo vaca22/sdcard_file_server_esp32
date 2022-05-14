@@ -200,7 +200,6 @@ static esp_err_t http_resp_dir_html(httpd_req_t *req, const char *dirpath)
 
 
     httpd_resp_sendstr_chunk(req, cJSON_Print(files));
-    ESP_LOGE("fuck","%s",cJSON_Print(files));
 
     httpd_resp_sendstr_chunk(req, NULL);
     cJSON_Delete(files);
