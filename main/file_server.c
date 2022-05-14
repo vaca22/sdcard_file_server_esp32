@@ -62,141 +62,25 @@ FILE *playFile=NULL;
 /* Max length a file path can have on storage */
 #define FILE_PATH_MAX (ESP_VFS_PATH_MAX + CONFIG_SPIFFS_OBJ_NAME_LEN)
 
-/* Max size of an individual file. Make sure this
- * value is same as that set in upload_script.html */
-#define MAX_FILE_SIZE   (64*1024*1024*1024) // 200 KB
-#define MAX_FILE_SIZE_STR "200KB"
+
 
 audio_pipeline_handle_t pipeline;
-/* Scratch buffer size */
+
 #define SCRATCH_BUFSIZE  8192
 
 struct file_server_data {
-    /* Base path of file storage */
     char base_path[ESP_VFS_PATH_MAX + 1];
-
-    /* Scratch buffer for temporary storage during file transfer */
     char scratch[SCRATCH_BUFSIZE];
 };
 
 static const char *TAG = "file_server";
 
-/* Handler to redirect incoming GET request for /index.html to /
- * This can be overridden by uploading file with same name */
-static esp_err_t index_html_get_handler(httpd_req_t *req)
-{
-    httpd_resp_set_status(req, "307 Temporary Redirect");
-    httpd_resp_set_hdr(req, "Location", "/");
-    httpd_resp_send(req, NULL, 0);  // Response body can be empty
-    return ESP_OK;
-}
 
-/* Handler to respond with an icon file embedded in flash.
- * Browsers expect to GET website icon at URI /favicon.ico.
- * This can be overridden by uploading file with same name */
-static esp_err_t favicon_get_handler(httpd_req_t *req)
-{
-    extern const unsigned char favicon_ico_start[] asm("_binary_favicon_ico_start");
-    extern const unsigned char favicon_ico_end[]   asm("_binary_favicon_ico_end");
-    const size_t favicon_ico_size = (favicon_ico_end - favicon_ico_start);
-    httpd_resp_set_type(req, "image/x-icon");
-    httpd_resp_send(req, (const char *)favicon_ico_start, favicon_ico_size);
-    return ESP_OK;
-}
 
-/* Send HTTP response with a run-time generated html consisting of
- * a list of all files and folders under the requested path.
- * In case of SPIFFS this returns empty list when path is any
- * string other than '/', since SPIFFS doesn't support directories */
-static esp_err_t http_resp_dir_html(httpd_req_t *req, const char *dirpath)
-{
-    char entrypath[FILE_PATH_MAX];
-    char entrysize[16];
-    const char *entrytype;
 
-    struct dirent *entry;
-    struct stat entry_stat;
 
-    DIR *dir = opendir(dirpath);
-    const size_t dirpath_len = strlen(dirpath);
 
-    /* Retrieve the base path of file storage to construct the full path */
-    strlcpy(entrypath, dirpath, sizeof(entrypath));
 
-    if (!dir) {
-        ESP_LOGE(TAG, "Failed to stat dir : %s", dirpath);
-        /* Respond with 404 Not Found */
-        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Directory does not exist");
-        return ESP_FAIL;
-    }
-
-    /* Send HTML file header */
-    httpd_resp_sendstr_chunk(req, "<!DOCTYPE html><html><body>");
-
-    /* Get handle to embedded file upload script */
-    extern const unsigned char upload_script_start[] asm("_binary_upload_script_html_start");
-    extern const unsigned char upload_script_end[]   asm("_binary_upload_script_html_end");
-    const size_t upload_script_size = (upload_script_end - upload_script_start);
-
-    /* Add file upload form and script which on execution sends a POST request to /upload */
-    httpd_resp_send_chunk(req, (const char *)upload_script_start, upload_script_size);
-
-    /* Send file-list table definition and column labels */
-    httpd_resp_sendstr_chunk(req,
-        "<table class=\"fixed\" border=\"1\">"
-        "<col width=\"800px\" /><col width=\"300px\" /><col width=\"300px\" /><col width=\"100px\" />"
-        "<thead><tr><th>Name</th><th>Type</th><th>Size (Bytes)</th><th>Delete</th></tr></thead>"
-        "<tbody>");
-
-    /* Iterate over all files / folders and fetch their names and sizes */
-    while ((entry = readdir(dir)) != NULL) {
-        entrytype = (entry->d_type == DT_DIR ? "directory" : "file");
-
-        strlcpy(entrypath + dirpath_len, entry->d_name, sizeof(entrypath) - dirpath_len);
-        if (stat(entrypath, &entry_stat) == -1) {
-            ESP_LOGE(TAG, "Failed to stat %s : %s", entrytype, entry->d_name);
-            continue;
-        }
-        sprintf(entrysize, "%ld", entry_stat.st_size);
-        ESP_LOGI(TAG, "Found %s : %s (%s bytes)", entrytype, entry->d_name, entrysize);
-
-        /* Send chunk of HTML file containing table entries with file name and size */
-        httpd_resp_sendstr_chunk(req, "<tr><td><a href=\"");
-        httpd_resp_sendstr_chunk(req, req->uri);
-        httpd_resp_sendstr_chunk(req, entry->d_name);
-        if (entry->d_type == DT_DIR) {
-            httpd_resp_sendstr_chunk(req, "/");
-        }
-        httpd_resp_sendstr_chunk(req, "\">");
-        httpd_resp_sendstr_chunk(req, entry->d_name);
-        httpd_resp_sendstr_chunk(req, "</a></td><td>");
-        httpd_resp_sendstr_chunk(req, entrytype);
-        httpd_resp_sendstr_chunk(req, "</td><td>");
-        httpd_resp_sendstr_chunk(req, entrysize);
-        httpd_resp_sendstr_chunk(req, "</td><td>");
-        httpd_resp_sendstr_chunk(req, "<form method=\"post\" action=\"/delete");
-        httpd_resp_sendstr_chunk(req, req->uri);
-        httpd_resp_sendstr_chunk(req, entry->d_name);
-        httpd_resp_sendstr_chunk(req, "\"><button type=\"submit\">Delete</button></form>");
-        httpd_resp_sendstr_chunk(req, "</td><td>");
-        httpd_resp_sendstr_chunk(req, "<form method=\"post\" action=\"/play");
-        httpd_resp_sendstr_chunk(req, req->uri);
-        httpd_resp_sendstr_chunk(req, entry->d_name);
-        httpd_resp_sendstr_chunk(req, "\"><button type=\"submit\">play</button></form>");
-        httpd_resp_sendstr_chunk(req, "</td></tr>\n");
-    }
-    closedir(dir);
-
-    /* Finish the file list table */
-    httpd_resp_sendstr_chunk(req, "</tbody></table>");
-
-    /* Send remaining chunk of HTML file to complete it */
-    httpd_resp_sendstr_chunk(req, "</body></html>");
-
-    /* Send empty chunk to signal HTTP response completion */
-    httpd_resp_sendstr_chunk(req, NULL);
-    return ESP_OK;
-}
 
 #define IS_FILE_EXT(filename, ext) \
     (strcasecmp(&filename[strlen(filename) - sizeof(ext) + 1], ext) == 0)
@@ -247,6 +131,96 @@ static const char* get_path_from_uri(char *dest, const char *base_path, const ch
     return dest + base_pathlen;
 }
 
+
+static esp_err_t http_resp_dir_html(httpd_req_t *req, const char *dirpath)
+{
+    char entrypath[FILE_PATH_MAX];
+    char entrysize[16];
+    const char *entrytype;
+
+    struct dirent *entry;
+    struct stat entry_stat;
+
+    DIR *dir = opendir(dirpath);
+    const size_t dirpath_len = strlen(dirpath);
+
+    /* Retrieve the base path of file storage to construct the full path */
+    strlcpy(entrypath, dirpath, sizeof(entrypath));
+
+    if (!dir) {
+        ESP_LOGE(TAG, "Failed to stat dir : %s", dirpath);
+        /* Respond with 404 Not Found */
+        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Directory does not exist");
+        return ESP_FAIL;
+    }
+
+    /* Send HTML file header */
+    httpd_resp_sendstr_chunk(req, "<!DOCTYPE html><html><body>");
+
+    /* Get handle to embedded file upload script */
+    extern const unsigned char upload_script_start[] asm("_binary_upload_script_html_start");
+    extern const unsigned char upload_script_end[]   asm("_binary_upload_script_html_end");
+    const size_t upload_script_size = (upload_script_end - upload_script_start);
+
+    /* Add file upload form and script which on execution sends a POST request to /upload */
+    httpd_resp_send_chunk(req, (const char *)upload_script_start, upload_script_size);
+
+    /* Send file-list table definition and column labels */
+    httpd_resp_sendstr_chunk(req,
+                             "<table class=\"fixed\" border=\"1\">"
+                             "<col width=\"800px\" /><col width=\"300px\" /><col width=\"300px\" /><col width=\"100px\" />"
+                             "<thead><tr><th>Name</th><th>Type</th><th>Size (Bytes)</th><th>Delete</th></tr></thead>"
+                             "<tbody>");
+
+    /* Iterate over all files / folders and fetch their names and sizes */
+    while ((entry = readdir(dir)) != NULL) {
+        entrytype = (entry->d_type == DT_DIR ? "directory" : "file");
+
+        strlcpy(entrypath + dirpath_len, entry->d_name, sizeof(entrypath) - dirpath_len);
+        if (stat(entrypath, &entry_stat) == -1) {
+            ESP_LOGE(TAG, "Failed to stat %s : %s", entrytype, entry->d_name);
+            continue;
+        }
+        sprintf(entrysize, "%ld", entry_stat.st_size);
+        ESP_LOGI(TAG, "Found %s : %s (%s bytes)", entrytype, entry->d_name, entrysize);
+
+        /* Send chunk of HTML file containing table entries with file name and size */
+        httpd_resp_sendstr_chunk(req, "<tr><td><a href=\"");
+        httpd_resp_sendstr_chunk(req, req->uri);
+        httpd_resp_sendstr_chunk(req, entry->d_name);
+        if (entry->d_type == DT_DIR) {
+            httpd_resp_sendstr_chunk(req, "/");
+        }
+        httpd_resp_sendstr_chunk(req, "\">");
+        httpd_resp_sendstr_chunk(req, entry->d_name);
+        httpd_resp_sendstr_chunk(req, "</a></td><td>");
+        httpd_resp_sendstr_chunk(req, entrytype);
+        httpd_resp_sendstr_chunk(req, "</td><td>");
+        httpd_resp_sendstr_chunk(req, entrysize);
+        httpd_resp_sendstr_chunk(req, "</td><td>");
+        httpd_resp_sendstr_chunk(req, "<form method=\"post\" action=\"/delete");
+        httpd_resp_sendstr_chunk(req, req->uri);
+        httpd_resp_sendstr_chunk(req, entry->d_name);
+        httpd_resp_sendstr_chunk(req, "\"><button type=\"submit\">Delete</button></form>");
+        httpd_resp_sendstr_chunk(req, "</td><td>");
+        httpd_resp_sendstr_chunk(req, "<form method=\"post\" action=\"/play");
+        httpd_resp_sendstr_chunk(req, req->uri);
+        httpd_resp_sendstr_chunk(req, entry->d_name);
+        httpd_resp_sendstr_chunk(req, "\"><button type=\"submit\">play</button></form>");
+        httpd_resp_sendstr_chunk(req, "</td></tr>\n");
+    }
+    closedir(dir);
+
+    /* Finish the file list table */
+    httpd_resp_sendstr_chunk(req, "</tbody></table>");
+
+    /* Send remaining chunk of HTML file to complete it */
+    httpd_resp_sendstr_chunk(req, "</body></html>");
+
+    /* Send empty chunk to signal HTTP response completion */
+    httpd_resp_sendstr_chunk(req, NULL);
+    return ESP_OK;
+}
 /* Handler to download a file kept on the server */
 static esp_err_t download_get_handler(httpd_req_t *req)
 {
@@ -262,22 +236,11 @@ static esp_err_t download_get_handler(httpd_req_t *req)
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Filename too long");
         return ESP_FAIL;
     }
-
-    /* If name has trailing '/', respond with directory contents */
     if (filename[strlen(filename) - 1] == '/') {
         return http_resp_dir_html(req, filepath);
     }
-
     if (stat(filepath, &file_stat) == -1) {
-        /* If file not present on SPIFFS check if URI
-         * corresponds to one of the hardcoded paths */
-        if (strcmp(filename, "/index.html") == 0) {
-            return index_html_get_handler(req);
-        } else if (strcmp(filename, "/favicon.ico") == 0) {
-            return favicon_get_handler(req);
-        }
         ESP_LOGE(TAG, "Failed to stat file : %s", filepath);
-        /* Respond with 404 Not Found */
         httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Filexxx does not exist");
         return ESP_FAIL;
     }
@@ -285,7 +248,6 @@ static esp_err_t download_get_handler(httpd_req_t *req)
     fd = fopen(filepath, "r");
     if (!fd) {
         ESP_LOGE(TAG, "Failed to read existing file : %s", filepath);
-        /* Respond with 500 Internal Server Error */
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to read existing file");
         return ESP_FAIL;
     }
@@ -293,37 +255,24 @@ static esp_err_t download_get_handler(httpd_req_t *req)
     ESP_LOGI(TAG, "Sending file : %s (%ld bytes)...", filename, file_stat.st_size);
     set_content_type_from_file(req, filename);
 
-    /* Retrieve the pointer to scratch buffer for temporary storage */
     char *chunk = ((struct file_server_data *)req->user_ctx)->scratch;
     size_t chunksize;
     do {
-        /* Read file in chunks into the scratch buffer */
         chunksize = fread(chunk, 1, SCRATCH_BUFSIZE, fd);
-
         if (chunksize > 0) {
-            /* Send the buffer contents as HTTP response chunk */
             if (httpd_resp_send_chunk(req, chunk, chunksize) != ESP_OK) {
                 fclose(fd);
                 ESP_LOGE(TAG, "File sending failed!");
-                /* Abort sending file */
                 httpd_resp_sendstr_chunk(req, NULL);
-                /* Respond with 500 Internal Server Error */
                 httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to send file");
                return ESP_FAIL;
            }
         }
-
-        /* Keep looping till the whole file is sent */
     } while (chunksize != 0);
 
-    /* Close file after sending complete */
     fclose(fd);
     ESP_LOGI(TAG, "File sending complete");
-
-    /* Respond with an empty chunk to signal HTTP response completion */
-#ifdef CONFIG_EXAMPLE_HTTPD_CONN_CLOSE_HEADER
     httpd_resp_set_hdr(req, "Connection", "close");
-#endif
     httpd_resp_send_chunk(req, NULL, 0);
     return ESP_OK;
 }
