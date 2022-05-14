@@ -422,7 +422,7 @@ static esp_err_t play_post_handler(httpd_req_t *req) {
                 playFile = NULL;
             }
             playFile = fopen(filepath, "rb");
-            setvbuf(playFile, card_buf, _IOFBF, 65536);
+            setvbuf(playFile, card_buf, _IOFBF, 16384);
             audio_pipeline_resume(pipeline);
         }
 
@@ -432,7 +432,7 @@ static esp_err_t play_post_handler(httpd_req_t *req) {
             playFile = NULL;
         }
         playFile = fopen(filepath, "rb");
-        setvbuf(playFile, card_buf, _IOFBF, 65536);
+        setvbuf(playFile, card_buf, _IOFBF,16384);
         if (el_state == AEL_STATE_FINISHED) {
             audio_pipeline_reset_ringbuffer(pipeline);
             audio_pipeline_reset_elements(pipeline);
