@@ -80,7 +80,6 @@ struct file_server_data {
 static const char *TAG = "file_server";
 
 
-static char rec_buf[SD_Fragment];
 static char card_buf[SD_Fragment];
 
 
