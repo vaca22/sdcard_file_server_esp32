@@ -69,7 +69,7 @@ audio_element_handle_t i2s_stream_writer, mp3_decoder;
 
 audio_pipeline_handle_t pipeline;
 
-#define SCRATCH_BUFSIZE  500
+#define SCRATCH_BUFSIZE  4096
 #define SD_Fragment 4096
 
 struct file_server_data {
@@ -312,25 +312,18 @@ static esp_err_t upload_post_handler(httpd_req_t *req) {
             return ESP_FAIL;
         }
 
-        if (received > 0) {
-            for (int k = 0; k < received; k++) {
-                if (index < SD_Fragment) {
-                    rec_buf[index] = buf[k];
-                    index++;
-                } else {
-                    index = 0;
-                    fwrite(rec_buf, SD_Fragment, 1, fd);
-                    rec_buf[index] = buf[k];
-                    index++;
-                }
-            }
+        if (received && (received != fwrite(buf, 1, received, fd))) {
+            /* Couldn't write everything to file!
+             * Storage may be full? */
+            fclose(fd);
+            unlink(filepath);
+
+            ESP_LOGE(TAG, "File write failed!");
+            /* Respond with 500 Internal Server Error */
+            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to write file to storage");
+            return ESP_FAIL;
         }
 
-        if (remaining == received) {
-            if (received < SD_Fragment) {
-                fwrite(buf, received, 1, fd);
-            }
-        }
 
         remaining -= received;
     }
