@@ -69,7 +69,8 @@ audio_element_handle_t i2s_stream_writer, mp3_decoder;
 
 audio_pipeline_handle_t pipeline;
 
-#define SCRATCH_BUFSIZE  15000
+#define SCRATCH_BUFSIZE  1500
+#define SD_Fragment 16384
 
 struct file_server_data {
     char base_path[ESP_VFS_PATH_MAX + 1];
@@ -79,8 +80,8 @@ struct file_server_data {
 static const char *TAG = "file_server";
 
 
-static char rec_buf[16384];
-static char card_buf[16384];
+static char rec_buf[SD_Fragment];
+static char card_buf[SD_Fragment];
 
 
 #define IS_FILE_EXT(filename, ext) \
@@ -313,12 +314,12 @@ static esp_err_t upload_post_handler(httpd_req_t *req) {
 
         if (received > 0) {
             for (int k = 0; k < received; k++) {
-                if (index < 16384) {
+                if (index < SD_Fragment) {
                     rec_buf[index] = buf[k];
                     index++;
                 } else {
                     index = 0;
-                    fwrite(rec_buf, 16384, 1, fd);
+                    fwrite(rec_buf, SD_Fragment, 1, fd);
                     rec_buf[index] = buf[k];
                     index++;
                 }
@@ -326,7 +327,7 @@ static esp_err_t upload_post_handler(httpd_req_t *req) {
         }
 
         if (remaining == received) {
-            if (received < 16384) {
+            if (received < SD_Fragment) {
                 fwrite(buf, received, 1, fd);
             }
         }
@@ -422,7 +423,7 @@ static esp_err_t play_post_handler(httpd_req_t *req) {
                 playFile = NULL;
             }
             playFile = fopen(filepath, "rb");
-            setvbuf(playFile, card_buf, _IOFBF, 16384);
+            setvbuf(playFile, card_buf, _IOFBF, SD_Fragment);
             audio_pipeline_resume(pipeline);
         }
 
@@ -432,7 +433,7 @@ static esp_err_t play_post_handler(httpd_req_t *req) {
             playFile = NULL;
         }
         playFile = fopen(filepath, "rb");
-        setvbuf(playFile, card_buf, _IOFBF,16384);
+        setvbuf(playFile, card_buf, _IOFBF,SD_Fragment);
         if (el_state == AEL_STATE_FINISHED) {
             audio_pipeline_reset_ringbuffer(pipeline);
             audio_pipeline_reset_elements(pipeline);
