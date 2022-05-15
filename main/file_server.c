@@ -69,8 +69,8 @@ audio_element_handle_t i2s_stream_writer, mp3_decoder;
 
 audio_pipeline_handle_t pipeline;
 
-#define SCRATCH_BUFSIZE  1500
-#define SD_Fragment 16384
+#define SCRATCH_BUFSIZE  500
+#define SD_Fragment 4096
 
 struct file_server_data {
     char base_path[ESP_VFS_PATH_MAX + 1];
@@ -559,7 +559,7 @@ esp_err_t start_file_server() {
     pipeline = audio_pipeline_init(&pipeline_cfg);
 
     mp3_decoder_cfg_t mp3_cfg = DEFAULT_MP3_DECODER_CONFIG();
-    mp3_cfg.out_rb_size = 64 * 1024;
+    mp3_cfg.out_rb_size = 16 * 1024;
     mp3_decoder = mp3_decoder_init(&mp3_cfg);
     audio_element_set_read_cb(mp3_decoder, mp3_music_read_cb, NULL);
 
