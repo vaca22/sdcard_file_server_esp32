@@ -253,8 +253,8 @@ void app_main(void) {
         ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
-  //  wifi_init_sta();
-  initEthernet();
+   wifi_init_sta();
+ // initEthernet();
     vTaskDelay(1000);
     sdcard_mount2();
     start_file_server();
