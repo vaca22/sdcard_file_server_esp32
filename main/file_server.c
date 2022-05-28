@@ -53,6 +53,7 @@
 
 
 #include "driver/sdmmc_host.h"
+#include "CJC8988_Reg.h"
 
 #include <freertos/event_groups.h>
 #include <soc/i2s_reg.h>
@@ -78,6 +79,44 @@ struct file_server_data {
 };
 
 static const char *TAG = "file_server";
+
+
+
+
+
+
+
+
+
+
+#define I2C_MASTER_SCL_IO           12      /*!< GPIO number used for I2C master clock */
+#define I2C_MASTER_SDA_IO           13      /*!< GPIO number used for I2C master data  */
+#define I2C_MASTER_NUM              0                         /*!< I2C master i2c port number, the number of i2c peripheral interfaces available will depend on the chip */
+#define I2C_MASTER_FREQ_HZ          100000                     /*!< I2C master clock frequency */
+#define I2C_MASTER_TX_BUF_DISABLE   0                          /*!< I2C master doesn't need buffer */
+#define I2C_MASTER_RX_BUF_DISABLE   0                          /*!< I2C master doesn't need buffer */
+
+
+
+static esp_err_t i2c_master_init(void) {
+    int i2c_master_port = I2C_MASTER_NUM;
+
+    i2c_config_t conf = {
+            .mode = I2C_MODE_MASTER,
+            .sda_io_num = I2C_MASTER_SDA_IO,
+            .scl_io_num = I2C_MASTER_SCL_IO,
+            .sda_pullup_en = GPIO_PULLUP_ENABLE,
+            .scl_pullup_en = GPIO_PULLUP_ENABLE,
+            .master.clk_speed = I2C_MASTER_FREQ_HZ,
+    };
+
+    i2c_param_config(i2c_master_port, &conf);
+
+    return i2c_driver_install(i2c_master_port, conf.mode, I2C_MASTER_RX_BUF_DISABLE, I2C_MASTER_TX_BUF_DISABLE, 0);
+}
+
+
+
 
 
 static char card_buf[SD_Fragment];
@@ -558,8 +597,7 @@ esp_err_t start_file_server() {
     i2s_stream_cfg_t i2s_cfg = I2S_STREAM_CFG_DEFAULT();
     i2s_cfg.type = AUDIO_STREAM_WRITER;
     i2s_cfg.i2s_config.use_apll = false;
-    i2s_cfg.use_alc = false;
-
+    i2s_cfg.i2s_config.sample_rate=44100;
     i2s_stream_writer = i2s_stream_init(&i2s_cfg);
 
 
@@ -578,6 +616,11 @@ esp_err_t start_file_server() {
 
     int x = xPortGetCoreID();
     ESP_LOGI(TAG, "Corefuckxy  %d", x);
+    ESP_ERROR_CHECK(i2c_master_init());
+    ESP_LOGI(TAG, "I2C initialized successfully");
+    vTaskDelay(10);
+    CJC8988_DAC_TO_LOUT1();
+    vTaskDelay(100);
 
     xTaskCreatePinnedToCore(chem1_task, "chem1", 4096, NULL, configMAX_PRIORITIES, &chem1_task_h, 1);
     return ESP_OK;
