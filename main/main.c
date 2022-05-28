@@ -255,7 +255,7 @@ void app_main(void) {
     ESP_ERROR_CHECK(ret);
    wifi_init_sta();
  // initEthernet();
-    vTaskDelay(1000);
+ //   vTaskDelay(1000);
     sdcard_mount2();
     start_file_server();
 
