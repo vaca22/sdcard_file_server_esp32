@@ -244,7 +244,7 @@ static void udp_server_task(void *pvParameters) {
                     }
                 }
                 if(valid){
-                    int err = sendto(sock, vacax, 7, 0, (struct sockaddr *) &source_addr, sizeof(source_addr));
+                    int err = sendto(sock, vacax, 6, 0, (struct sockaddr *) &source_addr, sizeof(source_addr));
                     if (err < 0) {
                         ESP_LOGE(TAG, "Error occurred during sending: errno %d", errno);
                         break;
