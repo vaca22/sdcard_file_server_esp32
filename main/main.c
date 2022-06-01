@@ -223,7 +223,7 @@ void initEthernet(){
     // Create new default instance of esp-netif for Ethernet
     esp_netif_config_t cfg = ESP_NETIF_DEFAULT_ETH();
     esp_netif_t *eth_netif = esp_netif_new(&cfg);
-    esp_netif_set_hostname(eth_netif,"fuckyou");
+    esp_netif_set_hostname(eth_netif,"lgh");
     // Init MAC and PHY configs to default
     eth_mac_config_t mac_config = ETH_MAC_DEFAULT_CONFIG();
     eth_phy_config_t phy_config = ETH_PHY_DEFAULT_CONFIG();
