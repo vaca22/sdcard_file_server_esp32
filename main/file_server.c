@@ -496,6 +496,33 @@ static esp_err_t pause_post_handler(httpd_req_t *req) {
 }
 
 
+static esp_err_t volume_post_handler(httpd_req_t *req) {
+    char filepath[FILE_PATH_MAX];
+    struct stat file_stat;
+
+    const char *filename = get_path_from_uri(filepath, ((struct file_server_data *) req->user_ctx)->base_path,
+                                             req->uri + sizeof("/volume") - 1, sizeof(filepath));
+    if (!filename) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Filename too long");
+        return ESP_FAIL;
+    }
+
+    int duck= atoi(filename+1);
+    ESP_LOGE("asdf","%d      %s",duck, filename);
+    if(duck==0){
+        CJC8988_SET_Volume(0);
+    }else{
+        ESP_LOGE("asdf","%d",duck);
+        CJC8988_SET_Volume(255+duck-100);
+    }
+    httpd_resp_set_status(req, "303 See Other");
+    httpd_resp_set_hdr(req, "Location", "/");
+    httpd_resp_set_hdr(req, "Connection", "close");
+    httpd_resp_sendstr(req, "File play successfully");
+    return ESP_OK;
+}
+
+
 int mp3_music_read_cb(audio_element_handle_t el, char *buf, int len, TickType_t wait_time, void *ctx) {
 
     int a = fread(buf, len, 1, playFile);
@@ -571,9 +598,16 @@ static void chem1_task(void *pvParameters) {
             .handler   = pause_post_handler,
             .user_ctx  = server_data
     };
+    httpd_uri_t file_volume = {
+            .uri       = "/volume/*",
+            .method    = HTTP_POST,
+            .handler   = volume_post_handler,
+            .user_ctx  = server_data
+    };
     httpd_register_uri_handler(server, &file_delete);
     httpd_register_uri_handler(server, &file_play);
     httpd_register_uri_handler(server, &file_pause);
+    httpd_register_uri_handler(server, &file_volume);
     while (1) {
 
         vTaskDelay(1000);
