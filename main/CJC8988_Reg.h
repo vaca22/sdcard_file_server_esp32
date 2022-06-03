@@ -64,6 +64,5 @@
 #define     CJC8988_R26_PWR_MGMT2_L                     0x34   // Power management2 and DAC left Power down; R/W
 #define     CJC8988_R26_PWR_MGMT2_H                     0x35   // Power management2 and DAC right Power up; R/W
 void CJC8988_DAC_TO_LOUT1(void);
-void CJC8988_LINPUT2_ADC_TO_DAC_LOUT2_8(void);
-void CJC8988_LINPUT2_ADC_TO_DAC_LOUT2_44(void);
+void CJC8988_SET_Volume(unsigned char vol);
 #endif
