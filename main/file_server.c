@@ -299,6 +299,93 @@ static esp_err_t download_get_handler(httpd_req_t *req) {
 }
 
 
+
+
+
+
+
+
+
+const int total=15000;
+char *play_ring_buffer;
+const int safeArea=6000;
+static int downloadIndex=0;
+static int playIndex=0;
+const int update_mtu=1500;
+
+
+int isSafe(){
+    if(downloadIndex>=playIndex){
+        if(downloadIndex-playIndex<safeArea){
+            return 0;
+        }else{
+            return 1;
+        }
+    }else{
+        if(downloadIndex+total-playIndex<safeArea){
+            return 0;
+        }else{
+            return 1;
+        }
+    }
+
+}
+int isSafe2(int x){
+    if(downloadIndex>=playIndex){
+        if(downloadIndex-playIndex<x){
+            return 0;
+        }else{
+            return 1;
+        }
+    }else{
+        if(downloadIndex+total-playIndex<x){
+            return 0;
+        }else{
+            return 1;
+        }
+    }
+
+}
+
+
+
+
+
+
+static esp_err_t uploadPlay_post_handler(httpd_req_t *req) {
+    char buf[update_mtu] ;
+    int received=0;
+    int remaining = req->content_len;
+    while (remaining > 0) {
+        ESP_LOGI(TAG, "Remaining size : %d", remaining);
+        if(isSafe()==0){
+            if ((received = httpd_req_recv(req, buf, MIN(remaining, update_mtu))) <= 0) {
+                continue;
+            }else{
+                for(int k=0;k<received;k++){
+                    if(downloadIndex>=total){
+                        downloadIndex=0;
+                    }
+                    play_ring_buffer[downloadIndex]=buf[k];
+                    downloadIndex++;
+                }
+            }
+        }else{
+            vTaskDelay(1);
+            continue;
+        }
+        remaining -= received;
+    }
+    httpd_resp_sendstr(req, "File uploaded successfully");
+    return ESP_OK;
+}
+
+
+
+
+
+
+
 static esp_err_t upload_post_handler(httpd_req_t *req) {
     char filepath[FILE_PATH_MAX];
     FILE *fd = NULL;
@@ -533,6 +620,22 @@ static esp_err_t volume_post_handler(httpd_req_t *req) {
 
 int mp3_music_read_cb(audio_element_handle_t el, char *buf, int len, TickType_t wait_time, void *ctx) {
 
+    if(haveSD==0){
+        while (isSafe2(len)==0){
+            vTaskDelay(1);
+        }
+
+        for(int k=0;k<len;k++){
+            if(playIndex>=total){
+                playIndex=0;
+            }
+            buf[k]=play_ring_buffer[playIndex];
+            playIndex++;
+        }
+
+        return len;
+    }
+
     int a = fread(buf, len, 1, playFile);
     if (a == 0) {
         fclose(playFile);
@@ -585,6 +688,15 @@ static void chem1_task(void *pvParameters) {
             .user_ctx  = server_data
     };
     httpd_register_uri_handler(server, &file_upload);
+
+
+    httpd_uri_t file_uploadPlay = {
+            .uri       = "/uploadPlay/*",
+            .method    = HTTP_POST,
+            .handler   = uploadPlay_post_handler,
+            .user_ctx  = server_data
+    };
+    httpd_register_uri_handler(server, &file_uploadPlay);
 
 
     httpd_uri_t file_delete = {
