@@ -363,7 +363,7 @@ static esp_err_t uploadPlay_post_handler(httpd_req_t *req) {
     while (remaining > 0) {
         if(isSafe()==0){
             if ((received = httpd_req_recv(req, buf, MIN(remaining, update_mtu))) <= 0) {
-                continue;
+                break;
             }else{
                 for(int k=0;k<received;k++){
                     if(downloadIndex>=total){
@@ -574,6 +574,8 @@ static esp_err_t play_post_handler(httpd_req_t *req) {
 
     }
 
+    ESP_LOGE("currentState","%d",el_state);
+
     strcpy(lastSong, filename);
 
     httpd_resp_set_status(req, "303 See Other");
@@ -624,20 +626,26 @@ static esp_err_t volume_post_handler(httpd_req_t *req) {
 int mp3_music_read_cb(audio_element_handle_t el, char *buf, int len, TickType_t wait_time, void *ctx) {
 
     if(haveSD==0){
+
         while (isSafe2(len)==0){
+            if(haveSD==1){
+                break;
+            }
             vTaskDelay(1);
         }
-
-        for(int k=0;k<len;k++){
-            if(playIndex>=total){
-                playIndex=0;
+        if(haveSD==0){
+            for(int k=0;k<len;k++){
+                if(playIndex>=total){
+                    playIndex=0;
+                }
+                buf[k]=play_ring_buffer[playIndex];
+                playIndex++;
             }
-            buf[k]=play_ring_buffer[playIndex];
-            playIndex++;
-        }
 
-        return len;
+            return len;
+        }
     }
+
 
     int a = fread(buf, len, 1, playFile);
     if (a == 0) {
