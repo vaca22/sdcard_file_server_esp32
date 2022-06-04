@@ -60,7 +60,7 @@
 #include <soc/rtc.h>
 #include <driver/periph_ctrl.h>
 #include <cJSON.h>
-
+extern int haveSD;
 static TaskHandle_t chem1_task_h;
 FILE *playFile = NULL;
 
