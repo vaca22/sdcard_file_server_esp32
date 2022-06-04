@@ -353,6 +353,10 @@ int isSafe2(int x){
 
 
 static esp_err_t uploadPlay_post_handler(httpd_req_t *req) {
+    audio_element_state_t el_state = audio_element_get_state(i2s_stream_writer);
+    if(el_state!=AEL_STATE_RUNNING){
+        audio_pipeline_run(pipeline);
+    }
     char buf[update_mtu] ;
     int received=0;
     int remaining = req->content_len;
@@ -735,6 +739,9 @@ static void chem1_task(void *pvParameters) {
 }
 
 esp_err_t start_file_server() {
+    if(haveSD==0){
+        play_ring_buffer= malloc(total);
+    }
     esp_log_level_set("*", ESP_LOG_WARN);
     esp_log_level_set(TAG, ESP_LOG_INFO);
 
