@@ -587,7 +587,11 @@ static esp_err_t play_post_handler(httpd_req_t *req) {
 
 
 static esp_err_t pause_post_handler(httpd_req_t *req) {
-    audio_pipeline_pause(pipeline);
+    audio_element_state_t el_state = audio_element_get_state(i2s_stream_writer);
+    if (el_state == AEL_STATE_RUNNING) {
+        audio_pipeline_pause(pipeline);
+    }
+
     httpd_resp_set_status(req, "303 See Other");
     httpd_resp_set_hdr(req, "Location", "/");
     httpd_resp_set_hdr(req, "Connection", "close");
