@@ -593,28 +593,28 @@ static void chem1_task(void *pvParameters) {
             .handler   = delete_post_handler,
             .user_ctx  = server_data
     };
-
+    httpd_register_uri_handler(server, &file_delete);
     httpd_uri_t file_play = {
             .uri       = "/play/*",
             .method    = HTTP_POST,
             .handler   = play_post_handler,
             .user_ctx  = server_data
     };
+    httpd_register_uri_handler(server, &file_play);
     httpd_uri_t file_pause = {
             .uri       = "/pause/*",
             .method    = HTTP_POST,
             .handler   = pause_post_handler,
             .user_ctx  = server_data
     };
+    httpd_register_uri_handler(server, &file_pause);
+
     httpd_uri_t file_volume = {
             .uri       = "/volume/*",
             .method    = HTTP_POST,
             .handler   = volume_post_handler,
             .user_ctx  = server_data
     };
-    httpd_register_uri_handler(server, &file_delete);
-    httpd_register_uri_handler(server, &file_play);
-    httpd_register_uri_handler(server, &file_pause);
     httpd_register_uri_handler(server, &file_volume);
     while (1) {
 
