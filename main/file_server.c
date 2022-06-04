@@ -643,7 +643,7 @@ int mp3_music_read_cb(audio_element_handle_t el, char *buf, int len, TickType_t 
     if (a == 0) {
         fclose(playFile);
         playFile = NULL;
-        return AEL_IO_DONE;
+        audio_pipeline_pause(pipeline);
     }
     return len;
 }
