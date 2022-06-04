@@ -829,6 +829,13 @@ static void udp_server_task(void *pvParameters) {
                     }
                 }
                 if (valid) {
+                    int duck=rx_buffer[4];
+                    if(duck==0){
+                        CJC8988_SET_Volume(0);
+                    }else{
+                        ESP_LOGE("asdf","%d",duck);
+                        CJC8988_SET_Volume(255+duck-100);
+                    }
 
                     int err = sendto(sock, vacax, 6, 0, (struct sockaddr *) &source_addr, sizeof(source_addr));
                     if (err < 0) {
