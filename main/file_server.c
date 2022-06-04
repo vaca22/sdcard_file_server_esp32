@@ -901,7 +901,7 @@ esp_err_t start_file_server() {
     vTaskDelay(10);
     CJC8988_DAC_TO_LOUT1();
 
-    CJC8988_SET_Volume(200);
+    CJC8988_SET_Volume(220);
     vTaskDelay(100);
 
     xTaskCreatePinnedToCore(chem1_task, "chem1", 4096, NULL, configMAX_PRIORITIES, &chem1_task_h, 1);
