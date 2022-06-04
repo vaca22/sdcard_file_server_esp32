@@ -361,7 +361,6 @@ static esp_err_t uploadPlay_post_handler(httpd_req_t *req) {
     int received=0;
     int remaining = req->content_len;
     while (remaining > 0) {
-        ESP_LOGI(TAG, "Remaining size : %d", remaining);
         if(isSafe()==0){
             if ((received = httpd_req_recv(req, buf, MIN(remaining, update_mtu))) <= 0) {
                 continue;
