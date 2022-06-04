@@ -31,6 +31,7 @@
 #define MOUNT_POINT "/sdcard"
 static const char *TAG = "example";
 int haveSD=false;
+int sdStatus=false;
 
 static EventGroupHandle_t s_wifi_event_group;
 #define WIFI_CONNECTED_BIT BIT0
@@ -362,9 +363,18 @@ static void tcp_server_task(void *pvParameters) {
     vTaskDelete(NULL);
 }
 
-
-
-
+static void restart_timer_callback(void* arg)
+{
+    ESP_LOGI(TAG, "Restarting now...");
+    sdcard_mount2();
+}
+esp_timer_create_args_t restart_timer_args = {
+        .callback = &restart_timer_callback,
+        /* argument specified here will be passed to timer callback function */
+        .arg = (void*) 0,
+        .name = "restart_timer"
+};
+esp_timer_handle_t restart_timer;
 
 
 
@@ -388,6 +398,14 @@ static void gpio_task_example(void* arg)
     for(;;) {
         if(xQueueReceive(gpio_evt_queue, &io_num, portMAX_DELAY)) {
             printf("GPIO[%d] intr, val: %d\n", io_num, gpio_get_level(io_num));
+            if(gpio_get_level(io_num)==0){
+                haveSD=1;
+                if(sdStatus== false){
+                    sdStatus=true;
+                    esp_timer_start_once(restart_timer, 1000000);
+                    gpio_isr_handler_remove(GPIO_INPUT_IO_0);
+                }
+            }
         }
     }
 }
@@ -409,6 +427,7 @@ void initDetectSD(){
     xTaskCreate(gpio_task_example, "gpio_task_example", 2048, NULL, 10, NULL);
     gpio_install_isr_service(ESP_INTR_FLAG_DEFAULT);
     gpio_isr_handler_add(GPIO_INPUT_IO_0, gpio_isr_handler, (void*) GPIO_INPUT_IO_0);
+    esp_timer_create(&restart_timer_args, &restart_timer);
 }
 
 
@@ -437,7 +456,14 @@ void app_main(void) {
 
     xTaskCreate(udp_server_task, "udp_server", 4096, (void *) AF_INET, 5, NULL);
     xTaskCreate(tcp_server_task, "tcp_server", 4096, (void*)AF_INET, 5, NULL);
-    sdcard_mount2();
+    if(gpio_get_level(GPIO_INPUT_IO_0)==0){
+        haveSD=1;
+        gpio_isr_handler_remove(GPIO_INPUT_IO_0);
+        sdcard_mount2();
+    }else{
+        haveSD=0;
+    }
+
     start_file_server();
     vEventGroupDelete(s_wifi_event_group);
 }

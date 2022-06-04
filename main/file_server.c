@@ -197,42 +197,50 @@ static const char *get_path_from_uri(char *dest, const char *base_path, const ch
 
 
 static esp_err_t http_resp_dir_html(httpd_req_t *req, const char *dirpath) {
-    char entrypath[FILE_PATH_MAX];
-    char entrysize[16];
-    const char *entrytype;
 
-    struct dirent *entry;
-    struct stat entry_stat;
+    if(haveSD){
+        char entrypath[FILE_PATH_MAX];
+        char entrysize[16];
+        const char *entrytype;
 
-    DIR *dir = opendir(dirpath);
-    const size_t dirpath_len = strlen(dirpath);
+        struct dirent *entry;
+        struct stat entry_stat;
 
-    strlcpy(entrypath, dirpath, sizeof(entrypath));
+        DIR *dir = opendir(dirpath);
+        const size_t dirpath_len = strlen(dirpath);
 
-    if (!dir) {
-        ESP_LOGE(TAG, "Failed to stat dir : %s", dirpath);
-        httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Directory does not exist");
-        return ESP_FAIL;
-    }
-    cJSON *files = cJSON_CreateArray();
-    while ((entry = readdir(dir)) != NULL) {
-        entrytype = (entry->d_type == DT_DIR ? "directory" : "file");
-        if (entry->d_type == DT_DIR) {
-            continue;
+        strlcpy(entrypath, dirpath, sizeof(entrypath));
+
+        if (!dir) {
+            ESP_LOGE(TAG, "Failed to stat dir : %s", dirpath);
+            httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, "Directory does not exist");
+            return ESP_FAIL;
         }
-        strlcpy(entrypath + dirpath_len, entry->d_name, sizeof(entrypath) - dirpath_len);
-        if (stat(entrypath, &entry_stat) == -1) {
-            ESP_LOGE(TAG, "Failed to stat %s : %s", entrytype, entry->d_name);
-            continue;
+        cJSON *files = cJSON_CreateArray();
+        while ((entry = readdir(dir)) != NULL) {
+            entrytype = (entry->d_type == DT_DIR ? "directory" : "file");
+            if (entry->d_type == DT_DIR) {
+                continue;
+            }
+            strlcpy(entrypath + dirpath_len, entry->d_name, sizeof(entrypath) - dirpath_len);
+            if (stat(entrypath, &entry_stat) == -1) {
+                ESP_LOGE(TAG, "Failed to stat %s : %s", entrytype, entry->d_name);
+                continue;
+            }
+            cJSON_AddItemToArray(files, cJSON_CreateString(entry->d_name));
         }
-        cJSON_AddItemToArray(files, cJSON_CreateString(entry->d_name));
+
+
+        httpd_resp_sendstr_chunk(req, cJSON_Print(files));
+        httpd_resp_sendstr_chunk(req, NULL);
+        cJSON_Delete(files);
+    }else{
+        httpd_resp_sendstr_chunk(req, NULL);
     }
 
 
-    httpd_resp_sendstr_chunk(req, cJSON_Print(files));
 
-    httpd_resp_sendstr_chunk(req, NULL);
-    cJSON_Delete(files);
+
     return ESP_OK;
 }
 
