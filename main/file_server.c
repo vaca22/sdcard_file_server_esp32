@@ -646,6 +646,9 @@ int mp3_music_read_cb(audio_element_handle_t el, char *buf, int len, TickType_t 
         }
     }
 
+    while (playFile==NULL){
+        vTaskDelay(1);
+    }
 
     int a = fread(buf, len, 1, playFile);
     if (a == 0) {
