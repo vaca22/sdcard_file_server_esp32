@@ -45,7 +45,7 @@ esp_err_t start_file_server();
 
 void sdcard_mount2(void) {
     esp_vfs_fat_sdmmc_mount_config_t mount_config = {
-            .format_if_mount_failed = false,
+            .format_if_mount_failed = true,
             .max_files = 5,
             .allocation_unit_size = 16 * 1024
     };
@@ -330,35 +330,10 @@ void initDetectSD(){
 
 
 void app_main(void) {
-    s_wifi_event_group = xEventGroupCreate();
     setIo32();
-    initDetectSD();
-    esp_err_t ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES ||
-        ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
-        ESP_ERROR_CHECK(nvs_flash_erase());
-        ret = nvs_flash_init();
-    }
-    ESP_ERROR_CHECK(ret);
-
-    initEthernet();
-    xEventGroupWaitBits(s_wifi_event_group,
-                        WIFI_CONNECTED_BIT,
-                        pdFALSE,
-                        pdFALSE,
-                        portMAX_DELAY);
-
-
-
-    xTaskCreate(tcp_server_task, "tcp_server", 4096, (void*)AF_INET, 5, NULL);
-    if(gpio_get_level(GPIO_INPUT_IO_0)==0){
-        haveSD=1;
-        gpio_isr_handler_remove(GPIO_INPUT_IO_0);
-        sdcard_mount2();
-    }else{
-        haveSD=0;
-    }
-
-    start_file_server();
-    vEventGroupDelete(s_wifi_event_group);
+    sdcard_mount2();
+   while(1){
+       ESP_LOGE("end","end1");
+       vTaskDelay(100);
+   }
 }
