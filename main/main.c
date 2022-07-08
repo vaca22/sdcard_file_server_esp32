@@ -76,24 +76,20 @@ void sdcard_mount2(void) {
 
 
 #define GPIO_OUTPUT_IO_0    32
-#define GPIO_OUTPUT_PIN_SEL  ((1ULL<<GPIO_OUTPUT_IO_0) )
+#define GPIO_OUTPUT_NETWORK    34
+#define GPIO_OUTPUT_PIN_SEL  ((1ULL<<GPIO_OUTPUT_IO_0)|(1ULL<<GPIO_OUTPUT_NETWORK))
 
 void setIo32() {
     gpio_config_t io_conf = {};
-    //disable interrupt
     io_conf.intr_type = GPIO_INTR_DISABLE;
-    //set as output mode
     io_conf.mode = GPIO_MODE_OUTPUT;
-    //bit mask of the pins that you want to set,e.g.GPIO18/19
     io_conf.pin_bit_mask = GPIO_OUTPUT_PIN_SEL;
-    //disable pull-down mode
     io_conf.pull_down_en = 0;
-    //disable pull-up mode
     io_conf.pull_up_en = 0;
-    //configure GPIO with the given settings
     gpio_config(&io_conf);
 
     gpio_set_level(GPIO_OUTPUT_IO_0, 1);
+    gpio_set_level(GPIO_OUTPUT_NETWORK, 1);
 }
 
 
@@ -306,6 +302,23 @@ static void gpio_task_example(void* arg)
 }
 
 
+static int networkOK=false;
+static void network_led_task(void* arg)
+{
+    for(;;) {
+        if(networkOK){
+            gpio_set_level(GPIO_OUTPUT_NETWORK, 1);
+        }
+        vTaskDelay(50);
+        if(networkOK){
+            gpio_set_level(GPIO_OUTPUT_NETWORK, 0);
+        }
+        vTaskDelay(100);
+
+    }
+}
+
+
 void initDetectSD(){
     gpio_config_t io_conf = {};
 
@@ -340,15 +353,16 @@ void app_main(void) {
         ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
-
+    xTaskCreate(network_led_task, "network_led", 4096, NULL, 6, NULL);
     initEthernet();
+    networkOK=false;
     xEventGroupWaitBits(s_wifi_event_group,
                         WIFI_CONNECTED_BIT,
                         pdFALSE,
                         pdFALSE,
                         portMAX_DELAY);
 
-
+    networkOK=true;
 
     xTaskCreate(tcp_server_task, "tcp_server", 4096, (void*)AF_INET, 5, NULL);
     if(gpio_get_level(GPIO_INPUT_IO_0)==0){
