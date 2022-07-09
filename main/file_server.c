@@ -188,6 +188,8 @@ static const char *get_path_from_uri(char *dest, const char *base_path, const ch
 
 static esp_err_t http_resp_dir_html(httpd_req_t *req, const char *dirpath) {
 
+    int ff=xPortGetFreeHeapSize();
+    ESP_LOGE("remain","%d",ff);
     if (haveSD) {
         char entrypath[FILE_PATH_MAX];
         char entrysize[16];
@@ -227,6 +229,8 @@ static esp_err_t http_resp_dir_html(httpd_req_t *req, const char *dirpath) {
     } else {
         httpd_resp_sendstr_chunk(req, NULL);
     }
+    httpd_resp_set_hdr(req, "Connection", "close");
+    httpd_resp_sendstr_chunk(req, NULL);
     return ESP_OK;
 }
 
