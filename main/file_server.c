@@ -83,21 +83,12 @@ struct file_server_data {
 static const char *TAG = "file_server";
 
 
-
-
-
-
-
-
-
-
 #define I2C_MASTER_SCL_IO           12      /*!< GPIO number used for I2C master clock */
 #define I2C_MASTER_SDA_IO           13      /*!< GPIO number used for I2C master data  */
 #define I2C_MASTER_NUM              0                         /*!< I2C master i2c port number, the number of i2c peripheral interfaces available will depend on the chip */
 #define I2C_MASTER_FREQ_HZ          100000                     /*!< I2C master clock frequency */
 #define I2C_MASTER_TX_BUF_DISABLE   0                          /*!< I2C master doesn't need buffer */
 #define I2C_MASTER_RX_BUF_DISABLE   0                          /*!< I2C master doesn't need buffer */
-
 
 
 static esp_err_t i2c_master_init(void) {
@@ -116,9 +107,6 @@ static esp_err_t i2c_master_init(void) {
 
     return i2c_driver_install(i2c_master_port, conf.mode, I2C_MASTER_RX_BUF_DISABLE, I2C_MASTER_TX_BUF_DISABLE, 0);
 }
-
-
-
 
 
 static char card_buf[SD_Fragment];
@@ -200,7 +188,7 @@ static const char *get_path_from_uri(char *dest, const char *base_path, const ch
 
 static esp_err_t http_resp_dir_html(httpd_req_t *req, const char *dirpath) {
 
-    if(haveSD){
+    if (haveSD) {
         char entrypath[FILE_PATH_MAX];
         char entrysize[16];
         const char *entrytype;
@@ -236,14 +224,43 @@ static esp_err_t http_resp_dir_html(httpd_req_t *req, const char *dirpath) {
         httpd_resp_sendstr_chunk(req, cJSON_Print(files));
         httpd_resp_sendstr_chunk(req, NULL);
         cJSON_Delete(files);
-    }else{
+    } else {
         httpd_resp_sendstr_chunk(req, NULL);
     }
+    return ESP_OK;
+}
 
 
+static esp_err_t ble_resp_dir_html(httpd_req_t *req) {
 
+
+    cJSON *files = cJSON_CreateArray();
+//    while ((entry = readdir(dir)) != NULL) {
+//        entrytype = (entry->d_type == DT_DIR ? "directory" : "file");
+//        if (entry->d_type == DT_DIR) {
+//            continue;
+//        }
+//        strlcpy(entrypath + dirpath_len, entry->d_name, sizeof(entrypath) - dirpath_len);
+//        if (stat(entrypath, &entry_stat) == -1) {
+//            ESP_LOGE(TAG, "Failed to stat %s : %s", entrytype, entry->d_name);
+//            continue;
+//        }
+//        cJSON_AddItemToArray(files, cJSON_CreateString(entry->d_name));
+//    }
+
+
+    httpd_resp_sendstr_chunk(req, cJSON_Print(files));
+    httpd_resp_sendstr_chunk(req, NULL);
+    cJSON_Delete(files);
 
     return ESP_OK;
+}
+
+
+static esp_err_t ble_get_handler(httpd_req_t *req) {
+
+    return ble_resp_dir_html(req);
+
 }
 
 
@@ -301,81 +318,71 @@ static esp_err_t download_get_handler(httpd_req_t *req) {
 }
 
 
-
-
-
-
-
-
-
-const int total=15000;
+const int total = 15000;
 char *play_ring_buffer;
-const int safeArea=6000;
-static int downloadIndex=0;
-static int playIndex=0;
-const int update_mtu=1500;
+const int safeArea = 6000;
+static int downloadIndex = 0;
+static int playIndex = 0;
+const int update_mtu = 1500;
 
 
-int isSafe(){
-    if(downloadIndex>=playIndex){
-        if(downloadIndex-playIndex<safeArea){
+int isSafe() {
+    if (downloadIndex >= playIndex) {
+        if (downloadIndex - playIndex < safeArea) {
             return 0;
-        }else{
+        } else {
             return 1;
         }
-    }else{
-        if(downloadIndex+total-playIndex<safeArea){
+    } else {
+        if (downloadIndex + total - playIndex < safeArea) {
             return 0;
-        }else{
-            return 1;
-        }
-    }
-
-}
-int isSafe2(int x){
-    if(downloadIndex>=playIndex){
-        if(downloadIndex-playIndex<x){
-            return 0;
-        }else{
-            return 1;
-        }
-    }else{
-        if(downloadIndex+total-playIndex<x){
-            return 0;
-        }else{
+        } else {
             return 1;
         }
     }
 
 }
 
+int isSafe2(int x) {
+    if (downloadIndex >= playIndex) {
+        if (downloadIndex - playIndex < x) {
+            return 0;
+        } else {
+            return 1;
+        }
+    } else {
+        if (downloadIndex + total - playIndex < x) {
+            return 0;
+        } else {
+            return 1;
+        }
+    }
 
-
-
+}
 
 
 static esp_err_t uploadPlay_post_handler(httpd_req_t *req) {
     audio_element_state_t el_state = audio_element_get_state(i2s_stream_writer);
-    if(el_state!=AEL_STATE_RUNNING){
+    if (el_state != AEL_STATE_RUNNING) {
         audio_pipeline_run(pipeline);
     }
-    char buf[update_mtu] ;
-    int received=0;
+    char buf[update_mtu];
+    int received = 0;
     int remaining = req->content_len;
     while (remaining > 0) {
-        if(isSafe()==0){
+        if (isSafe() == 0) {
             if ((received = httpd_req_recv(req, buf, MIN(remaining, update_mtu))) <= 0) {
                 break;
-            }else{
-                for(int k=0;k<received;k++){
-                    if(downloadIndex>=total){
-                        downloadIndex=0;
+            } else {
+                for (int k = 0; k < received; k++) {
+                    if (downloadIndex >= total) {
+                        downloadIndex = 0;
                     }
-                    play_ring_buffer[downloadIndex]=buf[k];
+                    play_ring_buffer[downloadIndex] = buf[k];
                     downloadIndex++;
                 }
             }
-        }else{
+        } else {
             vTaskDelay(1);
             continue;
         }
@@ -384,11 +391,6 @@ static esp_err_t uploadPlay_post_handler(httpd_req_t *req) {
     httpd_resp_sendstr(req, "File uploaded successfully");
     return ESP_OK;
 }
-
-
-
-
-
 
 
 static esp_err_t upload_post_handler(httpd_req_t *req) {
@@ -472,7 +474,7 @@ static esp_err_t upload_post_handler(httpd_req_t *req) {
 
 
     //httpd_resp_set_status(req, "303 See Other");
-  //  httpd_resp_set_hdr(req, "Location", "/");
+    //  httpd_resp_set_hdr(req, "Location", "/");
 
     httpd_resp_set_hdr(req, "Connection", "close");
     httpd_resp_send_chunk(req, NULL, 0);
@@ -564,7 +566,7 @@ static esp_err_t play_post_handler(httpd_req_t *req) {
             playFile = NULL;
         }
         playFile = fopen(filepath, "rb");
-        setvbuf(playFile, card_buf, _IOFBF,SD_Fragment);
+        setvbuf(playFile, card_buf, _IOFBF, SD_Fragment);
         if (el_state == AEL_STATE_FINISHED) {
             audio_pipeline_reset_ringbuffer(pipeline);
             audio_pipeline_reset_elements(pipeline);
@@ -576,7 +578,7 @@ static esp_err_t play_post_handler(httpd_req_t *req) {
 
     }
 
-    ESP_LOGE("currentState","%d",el_state);
+    ESP_LOGE("currentState", "%d", el_state);
 
     strcpy(lastSong, filename);
 
@@ -613,13 +615,13 @@ static esp_err_t volume_post_handler(httpd_req_t *req) {
         return ESP_FAIL;
     }
 
-    int duck= atoi(filename+1);
-    ESP_LOGE("asdf","%d      %s",duck, filename);
-    if(duck==0){
+    int duck = atoi(filename + 1);
+    ESP_LOGE("asdf", "%d      %s", duck, filename);
+    if (duck == 0) {
         CJC8988_SET_Volume(0);
-    }else{
-        ESP_LOGE("asdf","%d",duck);
-        CJC8988_SET_Volume(255+duck-100);
+    } else {
+        ESP_LOGE("asdf", "%d", duck);
+        CJC8988_SET_Volume(255 + duck - 100);
     }
     httpd_resp_set_status(req, "303 See Other");
     httpd_resp_set_hdr(req, "Location", "/");
@@ -631,20 +633,20 @@ static esp_err_t volume_post_handler(httpd_req_t *req) {
 
 int mp3_music_read_cb(audio_element_handle_t el, char *buf, int len, TickType_t wait_time, void *ctx) {
 
-    if(haveSD==0){
+    if (haveSD == 0) {
 
-        while (isSafe2(len)==0){
-            if(haveSD==1){
+        while (isSafe2(len) == 0) {
+            if (haveSD == 1) {
                 break;
             }
             vTaskDelay(1);
         }
-        if(haveSD==0){
-            for(int k=0;k<len;k++){
-                if(playIndex>=total){
-                    playIndex=0;
+        if (haveSD == 0) {
+            for (int k = 0; k < len; k++) {
+                if (playIndex >= total) {
+                    playIndex = 0;
                 }
-                buf[k]=play_ring_buffer[playIndex];
+                buf[k] = play_ring_buffer[playIndex];
                 playIndex++;
             }
 
@@ -652,7 +654,7 @@ int mp3_music_read_cb(audio_element_handle_t el, char *buf, int len, TickType_t 
         }
     }
 
-    while (playFile==NULL){
+    while (playFile == NULL) {
         vTaskDelay(1);
     }
 
@@ -698,8 +700,18 @@ static void chem1_task(void *pvParameters) {
             .handler   = download_get_handler,
             .user_ctx  = server_data
     };
+
+
     httpd_register_uri_handler(server, &file_download);
 
+
+    httpd_uri_t ble_download = {
+            .uri       = "/ble*",
+            .method    = HTTP_POST,
+            .handler   = ble_get_handler,
+            .user_ctx  = server_data
+    };
+    httpd_register_uri_handler(server, &ble_download);
 
     httpd_uri_t file_upload = {
             .uri       = "/upload/*",
@@ -753,8 +765,8 @@ static void chem1_task(void *pvParameters) {
         vTaskDelay(1000);
     }
 }
-int UDP_PORT = 8889;
 
+int UDP_PORT = 8889;
 
 
 char *vaca = "vaca";
@@ -829,12 +841,12 @@ static void udp_server_task(void *pvParameters) {
                     }
                 }
                 if (valid) {
-                    int duck=rx_buffer[4];
-                    if(duck==0){
+                    int duck = rx_buffer[4];
+                    if (duck == 0) {
                         CJC8988_SET_Volume(0);
-                    }else{
-                        ESP_LOGE("asdf","%d",duck);
-                        CJC8988_SET_Volume(255+duck-100);
+                    } else {
+                        ESP_LOGE("asdf", "%d", duck);
+                        CJC8988_SET_Volume(255 + duck - 100);
                     }
 
                     int err = sendto(sock, vacax, 6, 0, (struct sockaddr *) &source_addr, sizeof(source_addr));
@@ -858,8 +870,8 @@ static void udp_server_task(void *pvParameters) {
 
 esp_err_t start_file_server() {
     xTaskCreate(udp_server_task, "udp_server", 4096, (void *) AF_INET, 5, NULL);
-    if(haveSD==0){
-        play_ring_buffer= malloc(total);
+    if (haveSD == 0) {
+        play_ring_buffer = malloc(total);
     }
     esp_log_level_set("*", ESP_LOG_WARN);
     esp_log_level_set(TAG, ESP_LOG_INFO);
@@ -877,7 +889,7 @@ esp_err_t start_file_server() {
     i2s_stream_cfg_t i2s_cfg = I2S_STREAM_CFG_DEFAULT();
     i2s_cfg.type = AUDIO_STREAM_WRITER;
     i2s_cfg.i2s_config.use_apll = false;
-    i2s_cfg.i2s_config.sample_rate=44100;
+    i2s_cfg.i2s_config.sample_rate = 44100;
     i2s_stream_writer = i2s_stream_init(&i2s_cfg);
 
 
