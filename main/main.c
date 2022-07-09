@@ -76,7 +76,7 @@ void sdcard_mount2(void) {
 
 
 #define GPIO_OUTPUT_IO_0    32
-#define GPIO_OUTPUT_NETWORK    34
+#define GPIO_OUTPUT_NETWORK    32
 #define GPIO_OUTPUT_PIN_SEL  ((1ULL<<GPIO_OUTPUT_IO_0)|(1ULL<<GPIO_OUTPUT_NETWORK))
 
 void setIo32() {
@@ -353,7 +353,7 @@ void app_main(void) {
         ret = nvs_flash_init();
     }
     ESP_ERROR_CHECK(ret);
-    xTaskCreate(network_led_task, "network_led", 4096, NULL, 6, NULL);
+    //xTaskCreate(network_led_task, "network_led", 4096, NULL, 6, NULL);
     initEthernet();
     networkOK=false;
     xEventGroupWaitBits(s_wifi_event_group,
