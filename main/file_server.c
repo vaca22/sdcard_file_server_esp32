@@ -449,6 +449,9 @@ static esp_err_t upload_post_handler(httpd_req_t *req) {
 
         if ((received = httpd_req_recv(req, buf, MIN(remaining, SCRATCH_BUFSIZE))) <= 0) {
             if (received == HTTPD_SOCK_ERR_TIMEOUT) {
+                ESP_LOGE(TAG, "File write failed!");
+                httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to write file to storage");
+                return ESP_FAIL;
                 continue;
             }
             fclose(fd);
