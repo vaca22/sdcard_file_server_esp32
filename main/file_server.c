@@ -192,8 +192,8 @@ static esp_err_t http_resp_dir_html(httpd_req_t *req, const char *dirpath) {
     ESP_LOGE("remain","%d",ff);
     if (haveSD) {
         char entrypath[FILE_PATH_MAX];
-        char entrysize[16];
-        const char *entrytype;
+
+
 
         struct dirent *entry;
         struct stat entry_stat;
@@ -210,22 +210,25 @@ static esp_err_t http_resp_dir_html(httpd_req_t *req, const char *dirpath) {
         }
         cJSON *files = cJSON_CreateArray();
         while ((entry = readdir(dir)) != NULL) {
-            entrytype = (entry->d_type == DT_DIR ? "directory" : "file");
+
             if (entry->d_type == DT_DIR) {
                 continue;
             }
             strlcpy(entrypath + dirpath_len, entry->d_name, sizeof(entrypath) - dirpath_len);
             if (stat(entrypath, &entry_stat) == -1) {
-                ESP_LOGE(TAG, "Failed to stat %s : %s", entrytype, entry->d_name);
+                ESP_LOGE(TAG, "Failed to stat: %s",  entry->d_name);
                 continue;
             }
+
             cJSON_AddItemToArray(files, cJSON_CreateString(entry->d_name));
         }
 
-
-        httpd_resp_sendstr_chunk(req, cJSON_Print(files));
+        char * n=cJSON_Print(files);
+        httpd_resp_sendstr_chunk(req, n);
         httpd_resp_sendstr_chunk(req, NULL);
         cJSON_Delete(files);
+        free(n);
+        free(dir);
     } else {
         httpd_resp_sendstr_chunk(req, NULL);
     }
