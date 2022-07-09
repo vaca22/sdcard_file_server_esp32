@@ -72,7 +72,7 @@ audio_element_handle_t i2s_stream_writer, mp3_decoder;
 
 audio_pipeline_handle_t pipeline;
 
-#define SCRATCH_BUFSIZE  4096
+#define SCRATCH_BUFSIZE  2048
 #define SD_Fragment 4096
 
 struct file_server_data {
@@ -471,11 +471,11 @@ static esp_err_t upload_post_handler(httpd_req_t *req) {
     ESP_LOGI(TAG, "File reception complete");
 
 
-    httpd_resp_set_status(req, "303 See Other");
-    httpd_resp_set_hdr(req, "Location", "/");
+    //httpd_resp_set_status(req, "303 See Other");
+  //  httpd_resp_set_hdr(req, "Location", "/");
 
     httpd_resp_set_hdr(req, "Connection", "close");
-    httpd_resp_sendstr(req, "File uploaded successfully");
+    httpd_resp_send_chunk(req, NULL, 0);
     return ESP_OK;
 }
 
