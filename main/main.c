@@ -686,13 +686,16 @@ blecent_gap_event(struct ble_gap_event *event, void *arg)
                 memcpy (&source_addr, &sin, sizeof (sin));
 
 
-                char vacax[5]={96};
+                char vacax[30]={0};
+                vacax[0]=(char)(-event->disc.rssi);
+                memcpy(vacax+1,event->disc.addr.val,6);
+                memcpy(vacax+7,fields.name,fields.name_len);
+                vacax[fields.name_len+7]=0;
                 if(udpsock!=NULL){
-                    sendto(udpsock, vacax, 6, 0, (struct sockaddr *) &source_addr, sizeof(source_addr));
-
+                    sendto(udpsock, vacax, 30, 0, (struct sockaddr *) &source_addr, sizeof(source_addr));
                 }
 
-                ESP_LOGE("fuck","%s  %d  %d  %d   %d  %d  %d  %d",fuck,event->disc.rssi,
+                ESP_LOGE("gasBle","%s  %d  %d  %d   %d  %d  %d  %d",fuck,event->disc.rssi,
                          event->disc.addr.val[0],
                          event->disc.addr.val[1],
                          event->disc.addr.val[2],
