@@ -61,6 +61,7 @@
 #include <driver/periph_ctrl.h>
 #include <cJSON.h>
 #include <lwip/sockets.h>
+#include "file_server.h"
 
 extern int haveSD;
 static TaskHandle_t chem1_task_h;
@@ -783,7 +784,7 @@ int UDP_PORT = 8889;
 
 char *vaca = "vaca";
 char *vacax = "xvacax";
-
+int udpsock=NULL;
 
 static void udp_server_task(void *pvParameters) {
     char rx_buffer[128];
@@ -807,15 +808,15 @@ static void udp_server_task(void *pvParameters) {
             ip_protocol = IPPROTO_IPV6;
         }
 
-        int sock = socket(addr_family, SOCK_DGRAM, ip_protocol);
-        if (sock < 0) {
+        udpsock = socket(addr_family, SOCK_DGRAM, ip_protocol);
+        if (udpsock < 0) {
             ESP_LOGE(TAG, "Unable to create socket: errno %d", errno);
             break;
         }
         ESP_LOGI(TAG, "Socket created");
 
 
-        int err = bind(sock, (struct sockaddr *) &dest_addr, sizeof(dest_addr));
+        int err = bind(udpsock, (struct sockaddr *) &dest_addr, sizeof(dest_addr));
         if (err < 0) {
             ESP_LOGE(TAG, "Socket unable to bind: errno %d", errno);
         }
@@ -826,7 +827,7 @@ static void udp_server_task(void *pvParameters) {
             ESP_LOGI(TAG, "Waiting for data");
             struct sockaddr_storage source_addr; // Large enough for both IPv4 or IPv6
             socklen_t socklen = sizeof(source_addr);
-            int len = recvfrom(sock, rx_buffer, sizeof(rx_buffer) - 1, 0, (struct sockaddr *) &source_addr, &socklen);
+            int len = recvfrom(udpsock, rx_buffer, sizeof(rx_buffer) - 1, 0, (struct sockaddr *) &source_addr, &socklen);
 
             // Error occurred during receiving
             if (len < 0) {
@@ -861,7 +862,7 @@ static void udp_server_task(void *pvParameters) {
                         CJC8988_SET_Volume(255 + duck - 100);
                     }
 
-                    int err = sendto(sock, vacax, 6, 0, (struct sockaddr *) &source_addr, sizeof(source_addr));
+                    int err = sendto(udpsock, vacax, 6, 0, (struct sockaddr *) &source_addr, sizeof(source_addr));
                     if (err < 0) {
                         ESP_LOGE(TAG, "Error occurred during sending: errno %d", errno);
                         break;
@@ -871,10 +872,10 @@ static void udp_server_task(void *pvParameters) {
             }
         }
 
-        if (sock != -1) {
+        if (udpsock != -1) {
             ESP_LOGE(TAG, "Shutting down socket and restarting...");
-            shutdown(sock, 0);
-            close(sock);
+            shutdown(udpsock, 0);
+            close(udpsock);
         }
     }
     vTaskDelete(NULL);

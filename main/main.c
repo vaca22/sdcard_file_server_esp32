@@ -27,7 +27,7 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-
+#include "file_server.h"
 #define MOUNT_POINT "/sdcard"
 static const char *TAG = "example";
 int haveSD=false;
@@ -171,8 +171,8 @@ int TCP_PORT = 13207;
 
 
 
-
-
+struct sockaddr_storage tcp_source_addr;
+char str[INET_ADDRSTRLEN];
 
 
 static void tcp_server_task(void *pvParameters) {
@@ -224,13 +224,18 @@ static void tcp_server_task(void *pvParameters) {
 
         ESP_LOGI(TAG, "Socket listening");
 
-        struct sockaddr_storage source_addr; // Large enough for both IPv4 or IPv6
-        socklen_t addr_len = sizeof(source_addr);
-        int sock = accept(listen_sock, (struct sockaddr *) &source_addr, &addr_len);
+         // Large enough for both IPv4 or IPv6
+        socklen_t addr_len = sizeof(tcp_source_addr);
+        int sock = accept(listen_sock, (struct sockaddr *) &tcp_source_addr, &addr_len);
         if (sock < 0) {
             ESP_LOGE(TAG, "Unable to accept connection: errno %d", errno);
             break;
         }
+
+
+
+        inet_ntop(AF_INET, &(((struct sockaddr_in *) &tcp_source_addr)->sin_addr), str, INET_ADDRSTRLEN);
+        ESP_LOGE(TAG, "ETHIP:%s",str);
 
         // Set tcp keepalive option
         setsockopt(sock, SOL_SOCKET, SO_KEEPALIVE, &keepAlive, sizeof(int));
@@ -238,8 +243,8 @@ static void tcp_server_task(void *pvParameters) {
         setsockopt(sock, IPPROTO_TCP, TCP_KEEPINTVL, &keepInterval, sizeof(int));
         setsockopt(sock, IPPROTO_TCP, TCP_KEEPCNT, &keepCount, sizeof(int));
         // Convert ip address to string
-        if (source_addr.ss_family == PF_INET) {
-            inet_ntoa_r(((struct sockaddr_in *) &source_addr)->sin_addr, addr_str, sizeof(addr_str) - 1);
+        if (tcp_source_addr.ss_family == PF_INET) {
+            inet_ntoa_r(((struct sockaddr_in *) &tcp_source_addr)->sin_addr, addr_str, sizeof(addr_str) - 1);
         }
 
         ESP_LOGI(TAG, "Socket accepted ip address: %s", addr_str);
@@ -671,6 +676,21 @@ blecent_gap_event(struct ble_gap_event *event, void *arg)
             fuck[fields.name_len]=0;
 
             if(fields.name_len>0){
+                struct sockaddr_storage source_addr;
+                struct sockaddr_in sin;
+
+                memset (&sin, 0, sizeof (sin));
+                sin.sin_family = AF_INET;
+                sin.sin_addr.s_addr = inet_addr (str);
+                sin.sin_port=htons(9999);
+                memcpy (&source_addr, &sin, sizeof (sin));
+
+
+                char vacax[5]={96};
+                if(udpsock!=NULL){
+                    sendto(udpsock, vacax, 6, 0, (struct sockaddr *) &source_addr, sizeof(source_addr));
+
+                }
 
                 ESP_LOGE("fuck","%s  %d  %d  %d   %d  %d  %d  %d",fuck,event->disc.rssi,
                          event->disc.addr.val[0],
@@ -832,6 +852,7 @@ void blecent_host_task(void *param)
 
 
 void app_main(void) {
+    udpsock=NULL;
     s_wifi_event_group = xEventGroupCreate();
     setIo32();
     initDetectSD();
