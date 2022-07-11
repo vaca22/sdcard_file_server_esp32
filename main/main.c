@@ -41,9 +41,9 @@ static const char *TAG = "example";
 int haveSD=false;
 int sdStatus=false;
 
-#define EXAMPLE_AUDIO_SAMPLE_RATE  (16000)
+#define EXAMPLE_AUDIO_SAMPLE_RATE  (48000)
 #define EXAMPLE_AUDIO_BITS         (16)
-#define EXAMPLE_AUDIO_CHANNELS     (1)
+#define EXAMPLE_AUDIO_CHANNELS     (2)
 
 #define DEMO_EXIT_BIT (BIT0)
 static EventGroupHandle_t EXIT_FLAG;
@@ -601,7 +601,7 @@ void app_main(void) {
 
   //  audio_element_set_uri(http_stream_writer, "http://192.168.0.248:8000/upload");
     audio_pipeline_run(pipeline);
-    vTaskDelay(300);
+    vTaskDelay(500);
     audio_element_set_ringbuf_done(i2s_stream_reader);
 
 }
