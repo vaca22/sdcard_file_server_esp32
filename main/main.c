@@ -41,7 +41,7 @@ static const char *TAG = "example";
 int haveSD=false;
 int sdStatus=false;
 
-#define EXAMPLE_AUDIO_SAMPLE_RATE  (48000)
+#define EXAMPLE_AUDIO_SAMPLE_RATE  (44100)
 #define EXAMPLE_AUDIO_BITS         (16)
 #define EXAMPLE_AUDIO_CHANNELS     (2)
 
