@@ -92,22 +92,6 @@ static const char *TAG = "file_server";
 #define I2C_MASTER_RX_BUF_DISABLE   0                          /*!< I2C master doesn't need buffer */
 
 
-static esp_err_t i2c_master_init(void) {
-    int i2c_master_port = I2C_MASTER_NUM;
-
-    i2c_config_t conf = {
-            .mode = I2C_MODE_MASTER,
-            .sda_io_num = I2C_MASTER_SDA_IO,
-            .scl_io_num = I2C_MASTER_SCL_IO,
-            .sda_pullup_en = GPIO_PULLUP_ENABLE,
-            .scl_pullup_en = GPIO_PULLUP_ENABLE,
-            .master.clk_speed = I2C_MASTER_FREQ_HZ,
-    };
-
-    i2c_param_config(i2c_master_port, &conf);
-
-    return i2c_driver_install(i2c_master_port, conf.mode, I2C_MASTER_RX_BUF_DISABLE, I2C_MASTER_TX_BUF_DISABLE, 0);
-}
 
 
 static char card_buf[SD_Fragment];
@@ -921,7 +905,7 @@ esp_err_t start_file_server() {
 
     int x = xPortGetCoreID();
     ESP_LOGI(TAG, "Corefuckxy  %d", x);
-    ESP_ERROR_CHECK(i2c_master_init());
+    //ESP_ERROR_CHECK(i2c_master_init());
     ESP_LOGI(TAG, "I2C initialized successfully");
     vTaskDelay(10);
     CJC8988_DAC_TO_LOUT1();
